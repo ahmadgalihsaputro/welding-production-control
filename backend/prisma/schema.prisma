@@ -1,0 +1,397 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  operator_assy
+  operator_sub_assy
+  operator_both
+  leader
+  admin
+  management
+}
+
+enum QueueType {
+  Assy
+  Sub_Assy
+}
+
+enum QueueStatus {
+  waiting
+  running
+  complete
+}
+
+enum RequestStatus {
+  pending
+  allocated
+}
+
+enum ShiftNumber {
+  ONE
+  TWO
+}
+
+enum StockStatus {
+  safe
+  low
+  full
+  empty
+}
+
+model User {
+  id          String   @id @default(cuid())
+  employeeId  String   @unique
+  username    String   @unique
+  name        String
+  email       String?
+  password    String
+  role        Role
+  roleLabel   String
+  area        String
+  line        String
+  status      String   @default("active")
+  lastLogin   DateTime?
+  initials    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workAreas   UserWorkArea[]
+  queueItems  QueueItem[]
+  completedBoxes CompletedBox[]
+  productionResults ProductionShiftRecord[]
+}
+
+model WorkArea {
+  id        String   @id @default(cuid())
+  label     String
+  line      String
+  type      String
+  process   String
+  users     UserWorkArea[]
+
+  @@unique([line, type, process])
+}
+
+model UserWorkArea {
+  userId     String
+  workAreaId String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workArea   WorkArea @relation(fields: [workAreaId], references: [id], onDelete: Cascade)
+
+  @@id([userId, workAreaId])
+}
+
+model ProductionPart {
+  partNumber  String   @id
+  line        String
+  type        QueueType
+  process     String
+  models      String[]
+  packaging   Int?
+  maxStore    Int?
+  cycleTime   Float?
+  cycleGroupId String?
+  placeholder Boolean  @default(false)
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  queueItems  QueueItem[]
+  requests    ProductionRequest[]
+  completedBoxes CompletedBox[]
+  shiftRecords ProductionShiftRecord[]
+  ngRecords   NgShiftRecord[]
+}
+
+model Machine {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  name       String
+  line       String
+  processes  String[]
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model BomComponent {
+  id                String   @id @default(cuid())
+  parentPartNumber  String
+  componentPartNumber String
+  quantityPerAssy   Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([parentPartNumber, componentPartNumber])
+}
+
+model ScheduleItem {
+  id          String   @id @default(cuid())
+  partNumber  String
+  model       String
+  target      Int
+  actual      Int      @default(0)
+  status      String   @default("waiting")
+  shift       Int
+  dueTime     String
+  line        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProductionRequest {
+  id          String        @id @default(cuid())
+  code        String        @unique
+  partNumber  String
+  model       String
+  type        QueueType
+  line        String
+  process     String?
+  qty         Int
+  sourceShift Int?
+  scannedAt   DateTime      @default(now())
+  status      RequestStatus @default(pending)
+  targetShift Int?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  part        ProductionPart @relation(fields: [partNumber], references: [partNumber])
+}
+
+model QueueItem {
+  id             String      @id @default(cuid())
+  no             Int
+  partNumber     String
+  model          String
+  type           QueueType
+  line           String?
+  process        String?
+  sourceShift    Int?
+  targetShift    Int?
+  kanban         String
+  taken          Int
+  printedQty     Int         @default(0)
+  printedKanbans Int         @default(0)
+  stock          Int         @default(0)
+  time           String
+  priority       String      @default("normal")
+  status         QueueStatus @default(waiting)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  part           ProductionPart @relation(fields: [partNumber], references: [partNumber])
+  operator       User?          @relation(fields: [operatorId], references: [id])
+  operatorId     String?
+}
+
+model CompletedBox {
+  id               String   @id @default(cuid())
+  partNumber       String
+  type             QueueType
+  line             String?
+  qty              Int
+  kanban           String
+  completedAt      DateTime @default(now())
+  completedAtEpoch BigInt?
+  date             String?
+  operator         String
+  shift            Int?
+  createdAt        DateTime @default(now())
+
+  part             ProductionPart @relation(fields: [partNumber], references: [partNumber])
+  operatorUser     User?          @relation(fields: [operatorUserId], references: [id])
+  operatorUserId   String?
+}
+
+model ProductionShiftRecord {
+  id            String   @id @default(cuid())
+  date          String
+  partNumber    String
+  type          QueueType
+  process       String   @default("")
+  shift         Int
+  ok            Int      @default(0)
+  ng            Int      @default(0)
+  operator      String
+  time          String
+  line          String
+  updatedAtEpoch BigInt?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  part          ProductionPart @relation(fields: [partNumber], references: [partNumber])
+  operatorUser  User?          @relation(fields: [operatorUserId], references: [id])
+  operatorUserId String?
+
+  @@unique([date, partNumber, type, shift, line, process])
+}
+
+model NgShiftRecord {
+  id            String   @id @default(cuid())
+  date          String
+  partNumber    String
+  type          QueueType
+  shift         Int
+  ng            Int      @default(0)
+  operator      String
+  time          String
+  updatedAtEpoch BigInt?
+  line          String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  part          ProductionPart @relation(fields: [partNumber], references: [partNumber])
+}
+
+model MaterialRequest {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  kind        String   @default("request")
+  partNumber  String
+  boxes       Int
+  pcsPerBox   Int
+  status      String   @default("waiting")
+  destination String
+  note        String?
+  createdAt   DateTime @default(now())
+  requester   String
+  updatedAt   DateTime @updatedAt
+}
+
+model StockItem {
+  id          String      @id @default(cuid())
+  partNumber  String      @unique
+  description String
+  category    String
+  store       Int         @default(0)
+  buffer      Int         @default(0)
+  safetyStock Int         @default(0)
+  maxStore    Int         @default(0)
+  packaging   Int         @default(1)
+  location    String
+  status      StockStatus @default(safe)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model BufferItem {
+  id             String   @id @default(cuid())
+  partNumber     String
+  qty            Int
+  kanban         String
+  completedAt    DateTime @default(now())
+  operator       String
+  waitingMinutes Int      @default(0)
+  status         String   @default("pending")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model LedgerEntry {
+  id         String   @id @default(cuid())
+  time       DateTime @default(now())
+  partNumber String
+  type       String
+  qty        Int
+  balance    Int
+  location   String
+  reference  String
+  user       String
+  createdAt  DateTime @default(now())
+}
+
+model ProductionModel {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InventoryLocation {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  type      String
+  line      String
+  capacity  Int      @default(0)
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Routing {
+  id            String   @id @default(cuid())
+  partNumber    String
+  model         String
+  version       String   @default("1.0")
+  effectiveDate String
+  steps         Json
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([partNumber, model, version])
+}
+
+model ShiftConfig {
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  start              String
+  end                String
+  breakStart         String
+  breakEnd           String
+  workHours          Float    @default(0)
+  maxOvertimeMinutes Int      @default(0)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model KanbanConfig {
+  id        String   @id @default(cuid())
+  type      String   @unique
+  prefix    String
+  format    String
+  fields    String[]
+  template  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Device {
+  id         String    @id @default(cuid())
+  name       String
+  type       String
+  location   String
+  assignedTo String?
+  status     String    @default("offline")
+  lastSeen   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  time      DateTime @default(now())
+  title     String
+  detail    String
+  type      String
+  line      String?
+  process   String?
+  createdAt DateTime @default(now())
+}
