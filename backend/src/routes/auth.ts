@@ -25,6 +25,7 @@ function toPublicUser(user: {
   username: string
   name: string
   email: string | null
+  phone: string | null
   role: string
   roleLabel: string
   area: string
@@ -68,6 +69,7 @@ function toPublicUser(user: {
     username: user.username,
     name: user.name,
     email: user.email,
+    phone: user.phone,
     role: user.role,
     roleLabel: user.roleLabel,
     area: user.area,
@@ -137,26 +139,35 @@ router.get('/me', authenticate, async (req: AuthenticatedRequest, res, next) => 
 })
 
 const profileSchema = z.object({
-  name: z.string().min(1).optional(),
-  email: z.string().email().nullable().optional(),
+  name: z.string().trim().min(1).optional(),
+  email: z.string().trim().email().nullable().optional(),
+  phone: z.string().trim().max(30).nullable().optional(),
   initials: z.string().min(1).max(4).optional(),
 })
 
 router.patch('/profile', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = profileSchema.parse(req.body)
-    const user = await prisma.user.update({
-      where: { id: req.user!.id },
-      data: body,
-      include: userWithAreas,
+    const user = await prisma.$transaction(async (tx) => {
+      const existing = await tx.user.findUnique({ where: { id: req.user!.id } })
+      if (!existing) return null
+
+      const updated = await tx.user.update({
+        where: { id: existing.id },
+        data: body,
+        include: userWithAreas,
+      })
+      await tx.auditLog.create({
+        data: {
+          title: 'Profil pengguna diperbarui',
+          detail: `${updated.name} · ${updated.employeeId}`,
+          type: 'system',
+        },
+      })
+      return updated
     })
-    await prisma.auditLog.create({
-      data: {
-        title: 'Profil pengguna diperbarui',
-        detail: `${user.name} · ${user.employeeId}`,
-        type: 'system',
-      },
-    })
+    if (!user) return res.status(404).json({ message: 'Akun pengguna tidak ditemukan.' })
+
     res.json(toPublicUser(user))
   } catch (error) {
     next(error)

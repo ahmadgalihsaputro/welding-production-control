@@ -48,6 +48,8 @@ export interface SessionUser {
   shiftBase?: ShiftNumber
   shiftAnchorDate?: string | null
   email: string
+  phone?: string
+  status?: 'active' | 'inactive'
   initials: string
 }
 

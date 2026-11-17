@@ -59,6 +59,7 @@ model User {
   username    String   @unique
   name        String
   email       String?
+  phone       String?
   password    String
   role        Role
   roleLabel   String

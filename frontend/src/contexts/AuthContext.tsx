@@ -36,6 +36,7 @@ interface ApiUser {
   username: string
   name: string
   email: string | null
+  phone: string | null
   role: string
   roleLabel: string
   area: string
@@ -55,10 +56,17 @@ interface StoredSession {
   workAreaId?: string
 }
 
+interface ProfileUpdateInput {
+  name: string
+  email: string | null
+  phone: string | null
+}
+
 interface AuthContextValue {
   user: SessionUser | null
   isAuthenticated: boolean
   login: (identifier: string, password: string) => Promise<LoginResult>
+  updateProfile: (input: ProfileUpdateInput) => Promise<void>
   logout: () => void
   hasRole: (...roles: Role[]) => boolean
   activeLine: ProductionLineFilter
@@ -147,6 +155,8 @@ function toSessionUser(apiUser: ApiUser, workArea?: ProductionWorkArea): Session
     shiftBase: apiUser.shiftBase,
     shiftAnchorDate: apiUser.shiftAnchorDate,
     email: apiUser.email ?? '',
+    phone: apiUser.phone ?? '',
+    status: apiUser.status === 'active' ? 'active' : 'inactive',
     initials: apiUser.initials,
   }
 }
@@ -309,6 +319,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const updateProfile = useCallback(async (input: ProfileUpdateInput) => {
+    const updated = await api.patch<ApiUser>('/auth/profile', input)
+    setSession((current) => {
+      if (!current) return current
+      return {
+        ...current,
+        apiUser: updated,
+        user: {
+          ...current.user,
+          name: updated.name,
+          email: updated.email ?? '',
+          phone: updated.phone ?? '',
+          status: updated.status === 'active' ? 'active' : 'inactive',
+          initials: updated.initials,
+        },
+      }
+    })
+  }, [])
+
   const logout = useCallback(() => {
     setSession(null)
     setPendingApiUser(null)
@@ -373,6 +402,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: Boolean(user),
       login,
+      updateProfile,
       logout,
       hasRole,
       activeLine,
@@ -387,6 +417,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       user,
       login,
+      updateProfile,
       logout,
       hasRole,
       activeLine,
