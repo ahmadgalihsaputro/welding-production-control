@@ -11,7 +11,7 @@ router.use(authenticate)
 
 const writeRoles = requireRole('admin', 'leader')
 
-const queueType = z.enum(['Assy', 'Sub_Assy'])
+const partCategory = z.enum(['Assy', 'Sub_Assy', 'Press_Part', 'Child_Part', 'Bolt', 'Nut'])
 
 /* Parts */
 
@@ -23,7 +23,9 @@ router.get('/parts', async (req, res, next) => {
     const search = typeof req.query.search === 'string' ? req.query.search : undefined
     const items = await prisma.productionPart.findMany({
       where: {
-        ...(type === 'Assy' || type === 'Sub_Assy' ? { type } : {}),
+        ...(partCategory.options.includes(type as (typeof partCategory.options)[number])
+          ? { type: type as (typeof partCategory.options)[number] }
+          : {}),
         ...(line ? { line } : {}),
         ...(status === 'active' || status === 'inactive' ? { status } : {}),
         ...(search
@@ -46,7 +48,7 @@ router.get('/parts', async (req, res, next) => {
 const partSchema = z.object({
   partNumber: z.string().min(1),
   line: z.string().min(1),
-  type: queueType,
+  type: partCategory,
   process: z.string().min(1),
   models: z.array(z.string()).default([]),
   packaging: z.number().int().positive().nullable().optional(),
@@ -96,7 +98,10 @@ router.post('/parts', writeRoles, async (req, res, next) => {
     const body = partSchema.parse(req.body)
     const partNumber = body.partNumber.trim().toUpperCase()
     const process = body.process.trim()
-    const models = await resolvePartModels(body.models)
+    const productionType = body.type === 'Assy' || body.type === 'Sub_Assy'
+    const models = productionType
+      ? await resolvePartModels(body.models)
+      : { codes: [] as string[], error: null }
     if (models.error) return res.status(400).json({ message: models.error })
 
     const existing = await prisma.productionPart.findUnique({ where: { partNumber } })
@@ -112,8 +117,9 @@ router.post('/parts', writeRoles, async (req, res, next) => {
         data: {
           ...rest,
           partNumber,
-          process,
+          process: productionType ? process : body.type,
           models: models.codes,
+          line: productionType ? body.line.trim() : 'Non Production',
           cycleGroupId: cycleGroupId?.trim().toUpperCase() || null,
           status: body.status ?? 'active',
         },
@@ -132,7 +138,7 @@ router.post('/parts', writeRoles, async (req, res, next) => {
           create: {
             partNumber,
             description: partNumber,
-            category: body.type === 'Sub_Assy' ? 'Sub Assy' : 'Assy',
+            category: body.type.replace('_', ' '),
             ...stockData,
             safetyStock: 0,
             maxStore: body.maxStore ?? 0,
@@ -165,10 +171,16 @@ router.patch('/parts/:partNumber', writeRoles, async (req: AuthenticatedRequest,
     if (body.cycleGroupId !== undefined) {
       data.cycleGroupId = body.cycleGroupId?.trim().toUpperCase() || null
     }
-    if (body.models !== undefined) {
+    const isProductionType = body.type === undefined || body.type === 'Assy' || body.type === 'Sub_Assy'
+    if (body.models !== undefined && isProductionType) {
       const models = await resolvePartModels(body.models)
       if (models.error) return res.status(400).json({ message: models.error })
       data.models = models.codes
+    }
+    if (body.type !== undefined && body.type !== 'Assy' && body.type !== 'Sub_Assy') {
+      data.models = []
+      data.line = 'Non Production'
+      data.process = body.type
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -211,13 +223,19 @@ router.patch('/parts/:partNumber', writeRoles, async (req: AuthenticatedRequest,
           create: {
             partNumber,
             description: partNumber,
-            category: updated.type === 'Sub_Assy' ? 'Sub Assy' : 'Assy',
+            category: updated.type.replace('_', ' '),
             ...stockData,
             safetyStock: 0,
             maxStore: body.maxStore ?? updated.maxStore ?? 0,
             location: 'Box standard · ',
             status: 'safe',
           },
+        })
+      }
+      if (body.type !== undefined) {
+        await tx.stockItem.updateMany({
+          where: { partNumber },
+          data: { category: body.type.replace('_', ' ') },
         })
       }
       if (mappingChanged) {
@@ -927,6 +945,18 @@ router.delete('/routings/:id', requireRole('admin'), async (req, res, next) => {
 
 /* Stock policy */
 
+function partTypeFromStockCategory(category: string) {
+  switch (category) {
+    case 'Assy': return 'Assy'
+    case 'Sub Assy': return 'Sub_Assy'
+    case 'Press Part': return 'Press_Part'
+    case 'Child Part': return 'Child_Part'
+    case 'Bolt': return 'Bolt'
+    case 'Nut': return 'Nut'
+    default: return null
+  }
+}
+
 router.get('/stock-policy', async (req, res, next) => {
   try {
     const category = typeof req.query.category === 'string' ? req.query.category : undefined
@@ -942,7 +972,7 @@ router.get('/stock-policy', async (req, res, next) => {
 
 const stockPolicySchema = z.object({
   description: z.string().min(1).optional(),
-  category: z.string().min(1).optional(),
+  category: z.enum(['Assy', 'Sub Assy', 'Press Part', 'Child Part', 'Bolt', 'Nut', 'Bolt/Nut']).optional(),
   packaging: z.number().int().positive().optional(),
   maxStore: z.number().int().nonnegative().optional(),
   safetyStock: z.number().int().nonnegative().optional(),
@@ -952,7 +982,7 @@ const stockPolicySchema = z.object({
 const stockPolicyCreateSchema = z.object({
   partNumber: z.string().min(1),
   description: z.string().min(1),
-  category: z.string().min(1),
+  category: z.enum(['Assy', 'Sub Assy', 'Press Part', 'Child Part', 'Bolt', 'Nut']),
   packaging: z.number().int().positive(),
   maxStore: z.number().int().nonnegative().default(0),
   safetyStock: z.number().int().nonnegative().default(0),
@@ -963,10 +993,18 @@ router.post('/stock-policy', writeRoles, async (req, res, next) => {
   try {
     const body = stockPolicyCreateSchema.parse(req.body)
     const partNumber = body.partNumber.trim().toUpperCase()
+    const partType = partTypeFromStockCategory(body.category)
+    if (!partType) return res.status(400).json({ message: 'Kategori stock tidak dikenali.' })
     const existing = await prisma.stockItem.findUnique({ where: { partNumber } })
     if (existing) {
       return res.status(409).json({
         message: 'Part number sudah terdaftar sebagai stock item. Gunakan edit untuk memperbarui.',
+      })
+    }
+    const existingPart = await prisma.productionPart.findUnique({ where: { partNumber } })
+    if (existingPart && existingPart.type !== partType) {
+      return res.status(409).json({
+        message: `Kategori ${body.category} tidak sesuai tipe ${existingPart.type} di Master Part.`,
       })
     }
 
@@ -988,13 +1026,14 @@ router.post('/stock-policy', writeRoles, async (req, res, next) => {
         update: { packaging: body.packaging, maxStore: body.maxStore },
         create: {
           partNumber,
-          line: 'Robot G',
-          type: 'Assy',
-          process: 'UNKNOWN',
+          line: partType === 'Assy' || partType === 'Sub_Assy' ? 'Robot G' : 'Non Production',
+          type: partType,
+          process: partType === 'Assy' || partType === 'Sub_Assy' ? 'UNKNOWN' : body.category,
           models: [],
           packaging: body.packaging,
           maxStore: body.maxStore,
           status: 'inactive',
+          placeholder: true,
         },
       })
       return created
@@ -1011,6 +1050,26 @@ router.patch('/stock-policy/:partNumber', writeRoles, async (req, res, next) => 
     const partNumber = String(req.params.partNumber).toUpperCase()
     const stock = await prisma.stockItem.findUnique({ where: { partNumber } })
     if (!stock) return res.status(404).json({ message: 'Stock item tidak ditemukan.' })
+    const existingPart = await prisma.productionPart.findUnique({ where: { partNumber } })
+    const category = body.category ?? stock.category
+    const unchangedLegacyCategory = category === 'Bolt/Nut' && category === stock.category
+    const partType =
+      partTypeFromStockCategory(category) ??
+      (body.category === undefined || unchangedLegacyCategory ? existingPart?.type : null)
+    if (!partType) {
+      return res.status(400).json({ message: 'Pilih kategori Bolt atau Nut secara terpisah.' })
+    }
+    if (
+      body.category !== undefined &&
+      !unchangedLegacyCategory &&
+      existingPart &&
+      (existingPart.type === 'Assy' || existingPart.type === 'Sub_Assy') &&
+      existingPart.type !== partType
+    ) {
+      return res.status(409).json({
+        message: 'Tipe part produksi tidak dapat diubah dari Packaging & Policy. Ubah melalui Master Part Number.',
+      })
+    }
 
     const maxStore = body.maxStore ?? stock.maxStore
     const safetyStock = body.safetyStock ?? stock.safetyStock
@@ -1027,6 +1086,17 @@ router.patch('/stock-policy/:partNumber', writeRoles, async (req, res, next) => 
         where: { partNumber },
         data: data as never,
       })
+      if (body.category !== undefined && !unchangedLegacyCategory && existingPart && existingPart.type !== partType) {
+        await tx.productionPart.update({
+          where: { partNumber },
+          data: {
+            type: partType,
+            line: partType === 'Assy' || partType === 'Sub_Assy' ? 'Robot G' : 'Non Production',
+            process: partType === 'Assy' || partType === 'Sub_Assy' ? 'UNKNOWN' : category,
+            models: [],
+          },
+        })
+      }
       const partData: Record<string, number> = {}
       if (body.packaging !== undefined) partData.packaging = body.packaging
       if (body.maxStore !== undefined) partData.maxStore = body.maxStore
@@ -1036,12 +1106,13 @@ router.patch('/stock-policy/:partNumber', writeRoles, async (req, res, next) => 
           update: partData,
           create: {
             partNumber,
-            line: 'Robot G',
-            type: 'Assy',
-            process: 'UNKNOWN',
+            line: partType === 'Assy' || partType === 'Sub_Assy' ? 'Robot G' : 'Non Production',
+            type: partType,
+            process: partType === 'Assy' || partType === 'Sub_Assy' ? 'UNKNOWN' : category,
             models: [],
             ...partData,
             status: 'inactive',
+            placeholder: true,
           },
         })
       }
@@ -1282,11 +1353,165 @@ router.delete('/kanban/:id', requireRole('admin'), async (req, res, next) => {
   }
 })
 
+router.get('/kanban-items', async (_req, res, next) => {
+  try {
+    const configs = await prisma.kanbanPartConfig.findMany({
+      include: { part: { select: { line: true, process: true, type: true } } },
+      orderBy: [{ partNumber: 'asc' }, { model: 'asc' }],
+    })
+    res.json(configs.map(({ part, ...config }) => ({
+      ...config,
+      line: part.line,
+      process: part.process,
+      partType: part.type,
+    })))
+  } catch (error) {
+    next(error)
+  }
+})
+
+const kanbanPartConfigSchema = z.object({
+  partNumber: z.string().min(1),
+  model: z.string().min(1),
+  quantity: z.number().int().positive(),
+  storeLocation: z.string().min(1),
+  kanbanType: z.enum(['KD', 'Reguler']),
+  nextProcess: z.string().min(1),
+})
+
+type ResolvedKanbanPartConfig =
+  | { valid: false; error: string }
+  | {
+      valid: true
+      data: z.infer<typeof kanbanPartConfigSchema>
+      part: NonNullable<Awaited<ReturnType<typeof prisma.productionPart.findUnique>>>
+    }
+
+async function validateKanbanPartConfig(
+  input: z.infer<typeof kanbanPartConfigSchema>,
+): Promise<ResolvedKanbanPartConfig> {
+  const partNumber = input.partNumber.trim().toUpperCase()
+  const model = input.model.trim().toUpperCase()
+  const storeLocation = input.storeLocation.trim().toUpperCase()
+  const nextProcess = input.nextProcess.trim()
+  const part = await prisma.productionPart.findUnique({ where: { partNumber } })
+  if (
+    !part ||
+    part.status !== 'active' ||
+    (part.type !== 'Assy' && part.type !== 'Sub_Assy')
+  ) {
+    return { valid: false, error: `PN ${partNumber} belum terdaftar atau tidak aktif di Master Part.` }
+  }
+  if (!part.models.includes(model)) {
+    return { valid: false, error: `Model ${model} belum terdaftar untuk PN ${partNumber}.` }
+  }
+  const location = await prisma.inventoryLocation.findUnique({ where: { code: storeLocation } })
+  if (!location || location.status !== 'active') {
+    return { valid: false, error: `Store Location ${storeLocation} belum terdaftar atau tidak aktif.` }
+  }
+  const [processPart, processMachine] = await Promise.all([
+    prisma.productionPart.findFirst({
+      where: { process: nextProcess, status: 'active' },
+      select: { partNumber: true },
+    }),
+    prisma.machine.findFirst({
+      where: {
+        status: 'active',
+        OR: [{ line: nextProcess }, { processes: { has: nextProcess } }],
+      },
+      select: { id: true },
+    }),
+  ])
+  if (!processPart && !processMachine) {
+    return { valid: false, error: `Next Process ${nextProcess} belum terdaftar di Master Part atau Machine.` }
+  }
+  return {
+    valid: true,
+    data: { ...input, partNumber, model, storeLocation, nextProcess },
+    part,
+  }
+}
+
+router.post('/kanban-items', writeRoles, async (req, res, next) => {
+  try {
+    const body = kanbanPartConfigSchema.parse(req.body)
+    const resolved = await validateKanbanPartConfig(body)
+    if (!resolved.valid) return res.status(400).json({ message: resolved.error })
+    const existing = await prisma.kanbanPartConfig.findUnique({
+      where: {
+        partNumber_model: {
+          partNumber: resolved.data.partNumber,
+          model: resolved.data.model,
+        },
+      },
+    })
+    if (existing) {
+      return res.status(409).json({ message: 'Konfigurasi Kanban untuk PN dan model ini sudah ada.' })
+    }
+    const config = await prisma.kanbanPartConfig.create({ data: resolved.data })
+    res.status(201).json({
+      ...config,
+      line: resolved.part.line,
+      process: resolved.part.process,
+      partType: resolved.part.type,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.patch('/kanban-items/:id', writeRoles, async (req, res, next) => {
+  try {
+    const body = kanbanPartConfigSchema.parse(req.body)
+    const existing = await prisma.kanbanPartConfig.findUnique({
+      where: { id: String(req.params.id) },
+    })
+    if (!existing) return res.status(404).json({ message: 'Konfigurasi Kanban tidak ditemukan.' })
+    const resolved = await validateKanbanPartConfig(body)
+    if (!resolved.valid) return res.status(400).json({ message: resolved.error })
+    const duplicate = await prisma.kanbanPartConfig.findUnique({
+      where: {
+        partNumber_model: {
+          partNumber: resolved.data.partNumber,
+          model: resolved.data.model,
+        },
+      },
+    })
+    if (duplicate && duplicate.id !== existing.id) {
+      return res.status(409).json({ message: 'Konfigurasi Kanban untuk PN dan model ini sudah ada.' })
+    }
+    const config = await prisma.kanbanPartConfig.update({
+      where: { id: existing.id },
+      data: resolved.data,
+    })
+    res.json({
+      ...config,
+      line: resolved.part.line,
+      process: resolved.part.process,
+      partType: resolved.part.type,
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.delete('/kanban-items/:id', requireRole('admin'), async (req, res, next) => {
+  try {
+    await prisma.kanbanPartConfig.delete({ where: { id: String(req.params.id) } })
+    res.json({ ok: true })
+  } catch (error) {
+    next(error)
+  }
+})
+
 /* Cycle time */
 
 router.get('/cycle-time', async (_req, res, next) => {
   try {
-    const parts = await prisma.productionPart.findMany({ orderBy: { partNumber: 'asc' } })
+    const parts = await prisma.productionPart.findMany({
+      where: { type: { in: ['Assy', 'Sub_Assy'] } },
+      orderBy: { partNumber: 'asc' },
+    })
     res.json(
       parts.map((part) => ({
         partNumber: part.partNumber,

@@ -21,6 +21,15 @@ enum QueueType {
   Sub_Assy
 }
 
+enum PartCategory {
+  Assy
+  Sub_Assy
+  Press_Part
+  Child_Part
+  Bolt
+  Nut
+}
+
 enum QueueStatus {
   waiting
   running
@@ -58,10 +67,14 @@ model User {
   status      String   @default("active")
   lastLogin   DateTime?
   initials    String
+  shiftMode   String   @default("non_shift")
+  shiftBase   Int      @default(1)
+  shiftAnchorDate DateTime? @db.Date
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   workAreas   UserWorkArea[]
+  partSkills  UserPartSkill[]
   queueItems  QueueItem[]
   completedBoxes CompletedBox[]
   productionResults ProductionShiftRecord[]
@@ -87,10 +100,20 @@ model UserWorkArea {
   @@id([userId, workAreaId])
 }
 
+model UserPartSkill {
+  userId    String
+  partNumber String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  part      ProductionPart @relation(fields: [partNumber], references: [partNumber], onDelete: Cascade)
+
+  @@id([userId, partNumber])
+  @@index([partNumber])
+}
+
 model ProductionPart {
   partNumber  String   @id
   line        String
-  type        QueueType
+  type        PartCategory
   process     String
   models      String[]
   packaging   Int?
@@ -107,6 +130,8 @@ model ProductionPart {
   completedBoxes CompletedBox[]
   shiftRecords ProductionShiftRecord[]
   ngRecords   NgShiftRecord[]
+  userSkills  UserPartSkill[]
+  kanbanConfigs KanbanPartConfig[]
 }
 
 model Machine {
@@ -155,6 +180,7 @@ model ProductionRequest {
   process     String?
   qty         Int
   sourceShift Int?
+  barcodePayload String?
   scannedAt   DateTime      @default(now())
   status      RequestStatus @default(pending)
   targetShift Int?
@@ -175,6 +201,7 @@ model QueueItem {
   sourceShift    Int?
   targetShift    Int?
   kanban         String
+  barcodePayload String?
   taken          Int
   printedQty     Int         @default(0)
   printedKanbans Int         @default(0)
@@ -367,16 +394,34 @@ model KanbanConfig {
   updatedAt DateTime @updatedAt
 }
 
+model KanbanPartConfig {
+  id            String   @id @default(cuid())
+  partNumber    String
+  model         String
+  quantity      Int
+  storeLocation String
+  kanbanType    String
+  nextProcess   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  part          ProductionPart @relation(fields: [partNumber], references: [partNumber], onDelete: Cascade)
+
+  @@unique([partNumber, model])
+  @@index([partNumber])
+}
+
 model Device {
-  id         String    @id @default(cuid())
-  name       String
-  type       String
-  location   String
-  assignedTo String?
-  status     String    @default("offline")
-  lastSeen   DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  name          String
+  type          String
+  location      String
+  assignedTo    String?
+  status        String    @default("offline")
+  lastSeen      DateTime?
+  connectionType String?  // 'wireless' | 'wired' for scanners
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model AppSetting {

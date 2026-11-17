@@ -13,6 +13,7 @@ import {
   Settings2,
   Sun,
   UserRound,
+  X,
 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
@@ -69,6 +70,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
 
   const [query, setQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const [lineOpen, setLineOpen] = useState(false)
@@ -85,6 +87,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
   const notifRef = useRef<HTMLDivElement>(null)
   const userRef = useRef<HTMLDivElement>(null)
   const lineRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useClickOutside(notifRef, () => setNotifOpen(false), notifOpen)
   useClickOutside(userRef, () => setUserOpen(false), userOpen)
@@ -116,7 +119,20 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
       navigate(searchResults[0].path)
       setQuery('')
       setSearchFocused(false)
+      setSearchOpen(false)
     }
+  }
+
+  const toggleSearch = () => {
+    if (searchOpen) {
+      setSearchOpen(false)
+      setQuery('')
+      setSearchFocused(false)
+      return
+    }
+
+    setSearchOpen(true)
+    window.setTimeout(() => searchInputRef.current?.focus(), 0)
   }
 
   const handleLogout = () => {
@@ -150,9 +166,10 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
           </span>
         </div>
 
-        <div className="topbar__search">
+        <div className={cn('topbar__search', searchOpen && 'is-open')} id="topbar-search">
           <Search size={15} className="input-wrap__icon" />
           <input
+            ref={searchInputRef}
             className="input"
             type="search"
             placeholder="Cari menu, PN, Kanban…"
@@ -165,6 +182,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
               if (event.key === 'Escape') {
                 setQuery('')
                 setSearchFocused(false)
+                setSearchOpen(false)
               }
             }}
             aria-label="Pencarian global"
@@ -193,6 +211,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
                         navigate(result.path)
                         setQuery('')
                         setSearchFocused(false)
+                        setSearchOpen(false)
                       }}
                     >
                       <span>
@@ -271,6 +290,18 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          className="btn-icon topbar-search-toggle"
+          onClick={toggleSearch}
+          aria-label={searchOpen ? 'Tutup pencarian global' : 'Buka pencarian global'}
+          aria-expanded={searchOpen}
+          aria-controls="topbar-search"
+          title={searchOpen ? 'Tutup pencarian' : 'Cari'}
+        >
+          {searchOpen ? <X size={18} /> : <Search size={18} />}
+        </button>
 
         <button
           type="button"

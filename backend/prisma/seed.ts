@@ -8,14 +8,14 @@ import { fileURLToPath } from 'node:url'
 const prisma = new PrismaClient()
 
 const here = dirname(fileURLToPath(import.meta.url))
-const workbookPath = [
-  resolve(process.cwd(), '../KOMPOSISI RB.G.xlsx'),
-  resolve(here, '../../KOMPOSISI RB.G.xlsx'),
-].find((path) => existsSync(path))
-
-if (!workbookPath) {
-  throw new Error('KOMPOSISI RB.G.xlsx not found at the repository root.')
-}
+const workbookPath =
+  [
+    resolve(process.cwd(), '../KOMPOSISI RB.G.xlsx'),
+    resolve(here, '../../KOMPOSISI RB.G.xlsx'),
+  ].find((path) => existsSync(path)) ??
+  (() => {
+    throw new Error('KOMPOSISI RB.G.xlsx not found at the repository root.')
+  })()
 
 const LINE = 'Robot G'
 
@@ -24,6 +24,7 @@ interface SubAssemblyRow {
   partNumber: string
   packaging: number | null
   maxStore: number | null
+  cycleTime: number | null
   bolts: Array<{ partNumber: string; packaging: number | null }>
   pressParts: Array<{ partNumber: string; packaging: number | null }>
 }
@@ -33,6 +34,7 @@ interface AssyBlock {
   partNumber: string
   packaging: number | null
   maxStore: number | null
+  cycleTime: number | null
   subAssemblies: SubAssemblyRow[]
   childParts: Array<{ partNumber: string; packaging: number | null }>
 }
@@ -57,6 +59,11 @@ function integer(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null
 }
 
+function positiveNumber(value: unknown): number | null {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
 function readComposition(): AssyBlock[] {
   const workbook = XLSX.readFile(workbookPath)
   const sheet = workbook.Sheets['Komposisi']
@@ -78,6 +85,7 @@ function readComposition(): AssyBlock[] {
         partNumber: text(row[2]).toUpperCase(),
         packaging: integer(row[3]),
         maxStore: integer(row[4]),
+        cycleTime: positiveNumber(row[5]),
         subAssemblies: [],
         childParts: [],
       }
@@ -86,34 +94,39 @@ function readComposition(): AssyBlock[] {
     }
     if (!block) continue
 
-    const process = text(row[6])
-    const subPartNumber = text(row[7]).toUpperCase()
-    if (process && process.toUpperCase() !== 'SUPPLIER') {
+    const process = text(row[7])
+    const subPartNumber = text(row[8]).toUpperCase()
+    if (process && process.toUpperCase() !== 'SUPPLIER' && subPartNumber) {
       sub = {
         process,
         partNumber: subPartNumber,
-        packaging: integer(row[8]),
-        maxStore: integer(row[9]),
+        packaging: integer(row[9]),
+        maxStore: integer(row[10]),
+        cycleTime: positiveNumber(row[11]),
         bolts: [],
         pressParts: [],
       }
       block.subAssemblies.push(sub)
     }
 
-    const boltPartNumber = text(row[11]).toUpperCase()
+    const boltPartNumber = text(row[14]).toUpperCase()
     if (boltPartNumber && sub) {
-      sub.bolts.push({ partNumber: boltPartNumber, packaging: integer(row[12]) })
+      sub.bolts.push({ partNumber: boltPartNumber, packaging: integer(row[15]) })
     }
-    const pressPartNumber = text(row[14]).toUpperCase()
+    const pressPartNumber = text(row[18]).toUpperCase()
     if (pressPartNumber) {
       if (sub) {
-        sub.pressParts.push({ partNumber: pressPartNumber, packaging: integer(row[15]) })
+        sub.pressParts.push({ partNumber: pressPartNumber, packaging: integer(row[19]) })
       }
     }
-    const childPartNumber = text(row[17]).toUpperCase()
+    const childPartNumber = text(row[22]).toUpperCase()
     if (childPartNumber) {
-      block.childParts.push({ partNumber: childPartNumber, packaging: integer(row[18]) })
+      block.childParts.push({ partNumber: childPartNumber, packaging: integer(row[23]) })
     }
+  }
+
+  if (blocks.length === 0) {
+    throw new Error('No Assy rows found in the "Komposisi" sheet.')
   }
 
   return blocks
@@ -227,6 +240,9 @@ const users = [
 ]
 
 const machines = [
+  { code: 'LINE-ROBOT-G', name: 'Robot G', line: 'Robot G', processes: [], status: 'active' },
+  { code: 'LINE-ROBOT-H', name: 'Robot H', line: 'Robot H', processes: [], status: 'active' },
+  { code: 'LINE-ROBOT-A', name: 'Robot A', line: 'Robot A', processes: [], status: 'active' },
   { code: 'RB-G-WLD-ASSY', name: 'Robot G — Welding Assy', line: 'Robot G', processes: ['Assy Welding'], status: 'active' },
   { code: 'RB-G-WLD-SA', name: 'Robot G — Welding Sub Assy', line: 'Robot G', processes: ['Sub Assy Welding'], status: 'active' },
   { code: 'RB-G-PRS', name: 'Robot G — Press', line: 'Robot G', processes: ['Press Part'], status: 'active' },
@@ -296,9 +312,16 @@ function stockStatus(store: number, safetyStock: number, maxStore: number) {
 }
 
 function buildMasterData(blocks: AssyBlock[]) {
-  const parts = new Map<string, { partNumber: string; line: string; type: QueueType; process: string; models: Set<string>; packaging: number | null; maxStore: number | null }>()
+  const parts = new Map<string, { partNumber: string; line: string; type: QueueType; process: string; models: Set<string>; packaging: number | null; maxStore: number | null; cycleTime: number | null }>()
   const stock = new Map<string, StockSeed>()
   const boms = new Map<string, Map<string, number>>()
+
+  const mergeCycleTime = (partNumber: string, current: number | null, incoming: number | null) => {
+    if (current !== null && incoming !== null && current !== incoming) {
+      throw new Error(`Conflicting cycle times for part ${partNumber}: ${current} and ${incoming}.`)
+    }
+    return current ?? incoming
+  }
 
   const addStock = (entry: StockSeed) => {
     const current = stock.get(entry.partNumber)
@@ -316,6 +339,7 @@ function buildMasterData(blocks: AssyBlock[]) {
     const existing = parts.get(block.partNumber)
     if (existing) {
       existing.models.add(block.model)
+      existing.cycleTime = mergeCycleTime(block.partNumber, existing.cycleTime, block.cycleTime)
     } else {
       parts.set(block.partNumber, {
         partNumber: block.partNumber,
@@ -325,6 +349,7 @@ function buildMasterData(blocks: AssyBlock[]) {
         models: new Set([block.model]),
         packaging: block.packaging,
         maxStore: block.maxStore,
+        cycleTime: block.cycleTime,
       })
     }
 
@@ -378,6 +403,7 @@ function buildMasterData(blocks: AssyBlock[]) {
       const existingSub = parts.get(sub.partNumber)
       if (existingSub) {
         existingSub.models.add(block.model)
+        existingSub.cycleTime = mergeCycleTime(sub.partNumber, existingSub.cycleTime, sub.cycleTime)
       } else {
         parts.set(sub.partNumber, {
           partNumber: sub.partNumber,
@@ -387,6 +413,7 @@ function buildMasterData(blocks: AssyBlock[]) {
           models: new Set([block.model]),
           packaging: sub.packaging,
           maxStore: sub.maxStore,
+          cycleTime: sub.cycleTime,
         })
       }
       addStock({
@@ -420,9 +447,113 @@ function buildMasterData(blocks: AssyBlock[]) {
   return { parts, stock, boms }
 }
 
+async function syncWorkbookMasterData(
+  blocks: AssyBlock[],
+  masterData: ReturnType<typeof buildMasterData>,
+) {
+  const { parts, stock, boms } = masterData
+  if (parts.size === 0 || boms.size === 0) {
+    throw new Error('Workbook contains no production parts or BOM components; refusing to sync.')
+  }
+
+  const bomRows = Array.from(boms.entries()).flatMap(([parentPartNumber, components]) =>
+    Array.from(components.entries()).map(([componentPartNumber, quantityPerAssy]) => ({
+      parentPartNumber,
+      componentPartNumber,
+      quantityPerAssy,
+    })),
+  )
+  const shifts = readShiftRows()
+  const models = Array.from(new Set(blocks.map((block) => block.model)))
+
+  await prisma.$transaction(async (tx) => {
+    for (const part of parts.values()) {
+      await tx.productionPart.upsert({
+        where: { partNumber: part.partNumber },
+        update: {
+          line: part.line,
+          type: part.type,
+          process: part.process,
+          models: Array.from(part.models),
+          packaging: part.packaging,
+          maxStore: part.maxStore,
+          cycleTime: part.cycleTime,
+        },
+        create: {
+          partNumber: part.partNumber,
+          line: part.line,
+          type: part.type,
+          process: part.process,
+          models: Array.from(part.models),
+          packaging: part.packaging,
+          maxStore: part.maxStore,
+          cycleTime: part.cycleTime,
+        },
+      })
+    }
+
+    for (const part of stock.values()) {
+      await tx.stockItem.upsert({
+        where: { partNumber: part.partNumber },
+        update: {
+          description: part.description,
+          category: part.category,
+          packaging: part.packaging,
+          maxStore: part.maxStore,
+        },
+        create: {
+          partNumber: part.partNumber,
+          description: part.description,
+          category: part.category,
+          packaging: part.packaging,
+          maxStore: part.maxStore,
+          safetyStock: part.safetyStock,
+          store: part.store,
+          buffer: 0,
+          location: part.location,
+          status: stockStatus(part.store, part.safetyStock, part.maxStore),
+        },
+      })
+    }
+
+    await tx.bomComponent.deleteMany({
+      where: { parentPartNumber: { in: Array.from(parts.keys()) } },
+    })
+    await tx.bomComponent.createMany({ data: bomRows, skipDuplicates: true })
+
+    for (const model of models) {
+      await tx.productionModel.upsert({
+        where: { code: model },
+        update: { status: 'active' },
+        create: { code: model, name: `Model ${model}`, status: 'active' },
+      })
+    }
+
+    for (const shift of shifts) {
+      await tx.shiftConfig.upsert({
+        where: { name: shift.name },
+        update: shift,
+        create: shift,
+      })
+    }
+  }, { timeout: 30000 })
+
+  return bomRows
+}
+
 async function main() {
   const blocks = readComposition()
-  const { parts, stock, boms } = buildMasterData(blocks)
+  const masterData = buildMasterData(blocks)
+  const { parts, stock } = masterData
+
+  if (process.argv.includes('--workbook-only')) {
+    const bomRows = await syncWorkbookMasterData(blocks, masterData)
+    console.log(
+      `Workbook sync completed: ${blocks.length} Assy rows, ${parts.size} production parts, ${stock.size} stock items, ${bomRows.length} BOM rows.`,
+    )
+    return
+  }
+
   const password = await bcrypt.hash('wpc123', 10)
 
   for (const user of users) {
@@ -492,74 +623,7 @@ async function main() {
     })
   }
 
-  for (const part of parts.values()) {
-    await prisma.productionPart.upsert({
-      where: { partNumber: part.partNumber },
-      update: {
-        line: part.line,
-        type: part.type,
-        process: part.process,
-        models: Array.from(part.models),
-        packaging: part.packaging,
-        maxStore: part.maxStore,
-      },
-      create: {
-        partNumber: part.partNumber,
-        line: part.line,
-        type: part.type,
-        process: part.process,
-        models: Array.from(part.models),
-        packaging: part.packaging,
-        maxStore: part.maxStore,
-      },
-    })
-  }
-
-  for (const part of stock.values()) {
-    await prisma.stockItem.upsert({
-      where: { partNumber: part.partNumber },
-      update: {
-        description: part.description,
-        category: part.category,
-        packaging: part.packaging,
-        maxStore: part.maxStore,
-        safetyStock: part.safetyStock,
-        location: part.location,
-      },
-      create: {
-        partNumber: part.partNumber,
-        description: part.description,
-        category: part.category,
-        packaging: part.packaging,
-        maxStore: part.maxStore,
-        safetyStock: part.safetyStock,
-        store: part.store,
-        buffer: 0,
-        location: part.location,
-        status: stockStatus(part.store, part.safetyStock, part.maxStore),
-      },
-    })
-  }
-
-  const bomRows = Array.from(boms.entries()).flatMap(([parentPartNumber, components]) =>
-    Array.from(components.entries()).map(([componentPartNumber, quantityPerAssy]) => ({
-      parentPartNumber,
-      componentPartNumber,
-      quantityPerAssy,
-    })),
-  )
-  await prisma.bomComponent.deleteMany({
-    where: { parentPartNumber: { in: Array.from(parts.keys()) } },
-  })
-  await prisma.bomComponent.createMany({ data: bomRows, skipDuplicates: true })
-
-  for (const model of Array.from(new Set(blocks.map((block) => block.model)))) {
-    await prisma.productionModel.upsert({
-      where: { code: model },
-      update: { status: 'active' },
-      create: { code: model, name: `Model ${model}`, status: 'active' },
-    })
-  }
+  const bomRows = await syncWorkbookMasterData(blocks, masterData)
 
   for (const machine of machines) {
     await prisma.machine.upsert({
@@ -574,15 +638,6 @@ async function main() {
       where: { code: location.code },
       update: location,
       create: location,
-    })
-  }
-
-  const shiftRows = readShiftRows()
-  for (const shift of shiftRows) {
-    await prisma.shiftConfig.upsert({
-      where: { name: shift.name },
-      update: shift,
-      create: shift,
     })
   }
 

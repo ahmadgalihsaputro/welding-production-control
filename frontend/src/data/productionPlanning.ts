@@ -16,7 +16,7 @@ const defaultWorkdays = workingDays.slice(0, 6)
 
 export interface CycleTimeConfig {
   partNumber: string
-  line: 'Robot G' | 'Robot H'
+  line: string
   type: 'Assy' | 'Sub Assy'
   process: string
   models: string[]

@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
 import { authenticate, requireRole, type AuthenticatedRequest } from '../middleware/auth.js'
 import {
@@ -8,6 +9,7 @@ import {
   nonOperatorAreaMessage,
   workAreaMismatchForRole,
 } from '../lib/workAreas.js'
+import { currentUserShift } from '../lib/userShift.js'
 
 const router = Router()
 
@@ -33,7 +35,10 @@ const roleLabels: Record<Role, string> = {
   management: 'Management',
 }
 
-const userInclude = { workAreas: { include: { workArea: true } } } as const
+const userInclude = {
+  workAreas: { include: { workArea: true } },
+  partSkills: { include: { part: true } },
+} as const
 
 const userSelect = {
   id: true,
@@ -47,10 +52,26 @@ const userSelect = {
   line: true,
   status: true,
   initials: true,
+  shiftMode: true,
+  shiftBase: true,
+  shiftAnchorDate: true,
   lastLogin: true,
   createdAt: true,
   updatedAt: true,
   workAreas: { include: { workArea: true } },
+  partSkills: {
+    include: {
+      part: {
+        select: {
+          partNumber: true,
+          line: true,
+          type: true,
+          process: true,
+          models: true,
+        },
+      },
+    },
+  },
 } as const
 
 function initialsOf(name: string) {
@@ -84,6 +105,85 @@ async function resolveWorkAreaIds(role: Role, requestedIds: string[]) {
   return { ids: workAreaIds, error: null }
 }
 
+async function resolvePartNumbers(role: Role, requestedPartNumbers: string[]) {
+  const partNumbers = Array.from(
+    new Set(requestedPartNumbers.map((partNumber) => partNumber.trim().toUpperCase()).filter(Boolean)),
+  )
+  if (!isOperatorRole(role)) {
+    if (partNumbers.length > 0) {
+      return { partNumbers: [] as string[], error: nonOperatorAreaMessage(role) }
+    }
+    return { partNumbers: [] as string[], error: null }
+  }
+  if (partNumbers.length === 0) {
+    return { partNumbers: [] as string[], error: 'Pilih minimal satu PN yang dapat dikerjakan user.' }
+  }
+
+  const parts = await prisma.productionPart.findMany({
+    where: {
+      partNumber: { in: partNumbers },
+      type: { in: ['Assy', 'Sub_Assy'] },
+    },
+    select: { partNumber: true },
+  })
+  if (parts.length !== partNumbers.length) {
+    const known = new Set(parts.map((part) => part.partNumber))
+    const missing = partNumbers.filter((partNumber) => !known.has(partNumber))
+    return {
+      partNumbers: [] as string[],
+      error: `PN tidak terdaftar atau bukan part Assy/Sub Assy: ${missing.join(', ')}.`,
+    }
+  }
+  return { partNumbers, error: null }
+}
+
+async function syncPartSkills(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  partNumbers: string[],
+) {
+  const parts = await tx.productionPart.findMany({
+    where: { partNumber: { in: partNumbers } },
+    select: { partNumber: true, line: true, type: true, process: true },
+  })
+  const uniqueAreas = new Map(
+    parts.map((part) => [
+      `${part.line}:${part.type}:${part.process}`,
+      { line: part.line, type: part.type, process: part.process },
+    ]),
+  )
+  const areas = await Promise.all(
+    Array.from(uniqueAreas.values()).map((area) =>
+      tx.workArea.upsert({
+        where: {
+          line_type_process: {
+            line: area.line,
+            type: area.type,
+            process: area.process,
+          },
+        },
+        update: {},
+        create: {
+          label: `${area.line} · ${area.process}`,
+          ...area,
+        },
+      }),
+    ),
+  )
+  await tx.userPartSkill.deleteMany({ where: { userId } })
+  if (partNumbers.length > 0) {
+    await tx.userPartSkill.createMany({
+      data: partNumbers.map((partNumber) => ({ userId, partNumber })),
+    })
+  }
+  await tx.userWorkArea.deleteMany({ where: { userId } })
+  if (areas.length > 0) {
+    await tx.userWorkArea.createMany({
+      data: areas.map((area) => ({ userId, workAreaId: area.id })),
+    })
+  }
+}
+
 router.get('/roles', async (_req, res) => {
   res.json(
     (Object.keys(roleLabels) as Role[]).map((role) => ({
@@ -105,7 +205,7 @@ router.get('/', requireRole('admin', 'leader', 'management'), async (req, res, n
       select: userSelect,
       orderBy: { employeeId: 'asc' },
     })
-    res.json(users)
+    res.json(users.map((user) => ({ ...user, currentShift: currentUserShift(user) })))
   } catch (error) {
     next(error)
   }
@@ -123,6 +223,13 @@ const createUserSchema = z.object({
   initials: z.string().min(1).max(4).optional(),
   status: z.enum(['active', 'inactive']).optional(),
   workAreaIds: z.array(z.string()).optional(),
+  partNumbers: z.array(z.string()).optional(),
+  shiftMode: z.enum(['rotating', 'non_shift']).default('non_shift'),
+  shiftBase: z.union([z.literal(1), z.literal(2)]).default(1),
+  shiftAnchorDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+}).refine((body) => body.shiftMode !== 'rotating' || Boolean(body.shiftAnchorDate), {
+  message: 'Tanggal awal rotasi shift wajib diisi.',
+  path: ['shiftAnchorDate'],
 })
 
 router.post('/', requireRole('admin'), async (req, res, next) => {
@@ -148,10 +255,16 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
       })
     }
 
-    const workAreas = await resolveWorkAreaIds(body.role, body.workAreaIds ?? [])
-    if (workAreas.error) {
-      return res.status(400).json({ message: workAreas.error })
+    const partSkillResult = body.partNumbers === undefined
+      ? null
+      : await resolvePartNumbers(body.role, body.partNumbers)
+    if (partSkillResult?.error) {
+      return res.status(400).json({ message: partSkillResult.error })
     }
+    const workAreas = partSkillResult
+      ? { ids: [] as string[], error: null }
+      : await resolveWorkAreaIds(body.role, body.workAreaIds ?? [])
+    if (workAreas.error) return res.status(400).json({ message: workAreas.error })
 
     const user = await prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -167,10 +280,17 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
           line: body.line.trim(),
           initials: body.initials ?? initialsOf(body.name),
           status: body.status ?? 'active',
+          shiftMode: body.shiftMode,
+          shiftBase: body.shiftBase,
+          shiftAnchorDate: body.shiftAnchorDate
+            ? new Date(`${body.shiftAnchorDate}T00:00:00.000Z`)
+            : null,
         },
       })
 
-      if (workAreas.ids.length > 0) {
+      if (partSkillResult) {
+        await syncPartSkills(tx, created.id, partSkillResult.partNumbers)
+      } else if (workAreas.ids.length > 0) {
         await tx.userWorkArea.createMany({
           data: workAreas.ids.map((workAreaId) => ({ userId: created.id, workAreaId })),
         })
@@ -190,7 +310,7 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
       })
     })
 
-    res.status(201).json(user)
+    res.status(201).json({ ...user, currentShift: currentUserShift(user) })
   } catch (error) {
     next(error)
   }
@@ -212,6 +332,7 @@ const deviceSchema = z.object({
   location: z.string().min(1),
   assignedTo: z.string().nullable().optional(),
   status: z.enum(['online', 'offline', 'maintenance']).optional(),
+  connectionType: z.enum(['wireless', 'wired']).optional(),
 })
 
 router.post('/devices', requireRole('admin'), async (req, res, next) => {
@@ -265,6 +386,10 @@ const updateUserSchema = z.object({
   status: z.enum(['active', 'inactive']).optional(),
   password: z.string().min(8).optional(),
   workAreaIds: z.array(z.string()).optional(),
+  partNumbers: z.array(z.string()).optional(),
+  shiftMode: z.enum(['rotating', 'non_shift']).optional(),
+  shiftBase: z.union([z.literal(1), z.literal(2)]).optional(),
+  shiftAnchorDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 })
 
 router.get('/:id', async (req: AuthenticatedRequest, res, next) => {
@@ -274,7 +399,7 @@ router.get('/:id', async (req: AuthenticatedRequest, res, next) => {
       select: userSelect,
     })
     if (!user) return res.status(404).json({ message: 'User not found.' })
-    res.json(user)
+    res.json({ ...user, currentShift: currentUserShift(user) })
   } catch (error) {
     next(error)
   }
@@ -295,26 +420,42 @@ router.patch('/:id', requireRole('admin'), async (req: AuthenticatedRequest, res
 
     const nextRole = body.role ?? (existing.role as Role)
     let nextWorkAreaIds: string[] | null = null
+    let nextPartNumbers: string[] | null = null
 
-    if (body.workAreaIds !== undefined) {
+    if (body.partNumbers !== undefined) {
+      const resolved = await resolvePartNumbers(nextRole, body.partNumbers)
+      if (resolved.error) return res.status(400).json({ message: resolved.error })
+      nextPartNumbers = resolved.partNumbers
+    } else if (body.workAreaIds !== undefined) {
       const resolved = await resolveWorkAreaIds(nextRole, body.workAreaIds)
       if (resolved.error) return res.status(400).json({ message: resolved.error })
       nextWorkAreaIds = resolved.ids
     } else if (body.role && body.role !== existing.role) {
       if (isOperatorRole(body.role)) {
-        const resolved = await resolveWorkAreaIds(
+        const resolved = await resolvePartNumbers(
           body.role,
-          existing.workAreas.map((assignment) => assignment.workAreaId),
+          existing.partSkills.map((skill) => skill.partNumber),
         )
         if (resolved.error) return res.status(400).json({ message: resolved.error })
-        nextWorkAreaIds = resolved.ids
+        nextPartNumbers = resolved.partNumbers
       } else {
-        nextWorkAreaIds = []
+        nextPartNumbers = []
       }
     }
 
     const data: Record<string, unknown> = { ...body }
     delete data.workAreaIds
+    delete data.partNumbers
+    const shiftMode = body.shiftMode ?? existing.shiftMode
+    const shiftAnchorDate = body.shiftAnchorDate === undefined
+      ? existing.shiftAnchorDate
+      : body.shiftAnchorDate
+        ? new Date(`${body.shiftAnchorDate}T00:00:00.000Z`)
+        : null
+    if (shiftMode === 'rotating' && !shiftAnchorDate) {
+      return res.status(400).json({ message: 'Tanggal awal rotasi shift wajib diisi.' })
+    }
+    data.shiftAnchorDate = shiftAnchorDate
     if (body.password) data.password = await bcrypt.hash(body.password, 10)
     if (body.role) data.roleLabel = roleLabels[body.role]
 
@@ -324,7 +465,9 @@ router.patch('/:id', requireRole('admin'), async (req: AuthenticatedRequest, res
         data: data as never,
       })
 
-      if (nextWorkAreaIds !== null) {
+      if (nextPartNumbers !== null) {
+        await syncPartSkills(tx, existing.id, nextPartNumbers)
+      } else if (nextWorkAreaIds !== null) {
         await tx.userWorkArea.deleteMany({ where: { userId: existing.id } })
         if (nextWorkAreaIds.length > 0) {
           await tx.userWorkArea.createMany({
@@ -350,7 +493,7 @@ router.patch('/:id', requireRole('admin'), async (req: AuthenticatedRequest, res
       })
     })
 
-    res.json(user)
+    res.json({ ...user, currentShift: currentUserShift(user) })
   } catch (error) {
     next(error)
   }
@@ -361,31 +504,58 @@ router.delete('/:id', requireRole('admin'), async (req: AuthenticatedRequest, re
     if (req.user!.id === String(req.params.id)) {
       return res.status(400).json({ message: 'Tidak dapat menghapus akun sendiri.' })
     }
-    const user = await prisma.user.findUnique({ where: { id: String(req.params.id) } })
-    if (!user) return res.status(404).json({ message: 'User not found.' })
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: String(req.params.id) } })
+      if (!user) return { status: 404, message: 'User not found.' }
 
-    const [queue, boxes, results] = await Promise.all([
-      prisma.queueItem.count({ where: { operatorId: user.id } }),
-      prisma.completedBox.count({ where: { operatorUserId: user.id } }),
-      prisma.productionShiftRecord.count({ where: { operatorUserId: user.id } }),
-    ])
-    if (queue + boxes + results > 0) {
-      return res.status(400).json({
-        message:
-          'User masih memiliki transaksi produksi. Nonaktifkan akun ini agar histori tetap utuh.',
+      if (user.role === 'admin') {
+        const administratorCount = await tx.user.count({ where: { role: 'admin' } })
+        if (administratorCount <= 1) {
+          return {
+            status: 409,
+            message: 'Akun administrator terakhir tidak dapat dihapus. Tambahkan administrator lain terlebih dahulu.',
+          }
+        }
+      }
+
+      const [queue, boxes, results] = await Promise.all([
+        tx.queueItem.count({ where: { operatorId: user.id } }),
+        tx.completedBox.count({ where: { operatorUserId: user.id } }),
+        tx.productionShiftRecord.count({ where: { operatorUserId: user.id } }),
+      ])
+      if (queue + boxes + results > 0) {
+        return {
+          status: 400,
+          message: 'User masih memiliki transaksi produksi. Nonaktifkan akun ini agar histori tetap utuh.',
+        }
+      }
+
+      await tx.user.delete({ where: { id: user.id } })
+      await tx.auditLog.create({
+        data: {
+          title: `User ${user.employeeId} dihapus`,
+          detail: user.name,
+          type: 'system',
+        },
       })
-    }
+      return { status: 200, message: '' }
+    }, { isolationLevel: 'Serializable' })
 
-    await prisma.user.delete({ where: { id: user.id } })
-    await prisma.auditLog.create({
-      data: {
-        title: `User ${user.employeeId} dihapus`,
-        detail: user.name,
-        type: 'system',
-      },
-    })
+    if (result.status !== 200) {
+      return res.status(result.status).json({ message: result.message })
+    }
     res.json({ ok: true })
   } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'P2034'
+    ) {
+      return res.status(409).json({
+        message: 'Data user berubah bersamaan. Muat ulang daftar sebelum mencoba lagi.',
+      })
+    }
     next(error)
   }
 })

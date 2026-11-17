@@ -192,11 +192,9 @@ export const navigation: NavGroup[] = [
     section: 'admin',
     roles: ['leader', 'admin'],
     items: [
-      { label: 'Production Structure', path: '/master/structure', roles: ['admin'] },
       { label: 'Model', path: '/master/models', roles: ['leader', 'admin'] },
       { label: 'Part Number', path: '/master/parts', roles: ['leader', 'admin'] },
       { label: 'BOM', path: '/master/bom', roles: ['leader', 'admin'] },
-      { label: 'Routing & Process', path: '/master/routing', roles: ['leader', 'admin'] },
       { label: 'Cycle Time & Capacity', path: '/master/cycle-time', roles: ['admin'] },
       { label: 'Machine', path: '/master/machines', roles: ['admin'] },
       { label: 'Packaging & Policy', path: '/master/stock-policy', roles: ['leader', 'admin'] },

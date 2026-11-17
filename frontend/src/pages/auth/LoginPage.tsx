@@ -176,7 +176,7 @@ export function LoginPage() {
         </Button>
       </form>
 
-      <p className="auth-note">WPC · Authorized Personnel Only</p>
+      <p className="auth-note">PT. Auto Aska Indonesia</p>
 
       {pendingWorkAreas.length > 0 &&
         createPortal(

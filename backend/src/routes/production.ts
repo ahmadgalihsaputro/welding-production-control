@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { authenticate, requireRole, type AuthenticatedRequest } from '../middleware/auth.js'
 import { prisma } from '../lib/prisma.js'
@@ -22,45 +23,110 @@ function dateKey(date = new Date()) {
 
 const scanSchema = z.object({
   code: z.string().min(1),
-  partNumber: z.string().min(1),
-  model: z.string().min(1),
-  type: queueTypeSchema,
-  qty: z.number().int().positive(),
-  process: z.string().optional(),
   sourceShift: z.number().int().min(1).max(2).optional(),
+})
+
+const kanbanBarcodeSchema = z.object({
+  version: z.literal(1),
+  partNumber: z.string().min(1),
+  line: z.string().min(1),
+  qty: z.number().int().positive(),
+  operator: z.string().min(1),
+  shift: z.number().int().min(1).max(2),
+  model: z.string().min(1),
+  storeLocation: z.string().min(1),
+  kanbanType: z.enum(['KD', 'Reguler']),
+  partType: z.enum(['Assy', 'Sub_Assy']),
+  process: z.string().min(1),
+  nextProcess: z.string().min(1),
 })
 
 router.post('/requests/scan', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = scanSchema.parse(req.body)
-    const code = body.code.trim().toUpperCase()
-    const partNumber = body.partNumber.trim().toUpperCase()
+    let decoded: unknown
+    try {
+      decoded = JSON.parse(body.code.trim())
+    } catch {
+      return res.status(400).json({ message: 'Barcode Kanban tidak berisi payload JSON yang valid.' })
+    }
+    const parsedBarcode = kanbanBarcodeSchema.safeParse(decoded)
+    if (!parsedBarcode.success) {
+      return res.status(400).json({ message: 'Payload barcode Kanban tidak lengkap atau tidak valid.' })
+    }
+    const barcode = parsedBarcode.data
+    const partNumber = barcode.partNumber.trim().toUpperCase()
+    const model = barcode.model.trim().toUpperCase()
     const part = await prisma.productionPart.findUnique({ where: { partNumber } })
-    if (!part || part.type !== body.type) {
-      return res.status(400).json({ message: 'Part number is not registered for this production type.' })
+    if (
+      !part ||
+      part.status !== 'active' ||
+      (part.type !== 'Assy' && part.type !== 'Sub_Assy') ||
+      part.type !== barcode.partType
+    ) {
+      return res.status(400).json({ message: 'Part number atau jenis part pada barcode tidak sesuai Master Part.' })
     }
-    if (part.models.length > 0 && !part.models.includes(body.model)) {
-      return res.status(400).json({ message: `Model ${body.model} is not registered for ${partNumber}.` })
+    if (
+      !part.models.includes(model) ||
+      part.line !== barcode.line ||
+      part.process !== barcode.process
+    ) {
+      return res.status(400).json({ message: `Data line, proses, atau model pada barcode tidak sesuai Master Part untuk ${partNumber}.` })
     }
-
-    const [existingItem, existingRequest, existingCompleted] = await Promise.all([
-      prisma.queueItem.findFirst({ where: { kanban: { equals: code, mode: 'insensitive' } } }),
-      prisma.productionRequest.findFirst({ where: { code: { equals: code, mode: 'insensitive' } } }),
-      prisma.completedBox.findFirst({ where: { kanban: { startsWith: code } } }),
+    const config = await prisma.kanbanPartConfig.findUnique({
+      where: { partNumber_model: { partNumber, model } },
+    })
+    if (
+      !config ||
+      config.storeLocation !== barcode.storeLocation ||
+      config.kanbanType !== barcode.kanbanType ||
+      config.nextProcess !== barcode.nextProcess ||
+      barcode.qty > config.quantity
+    ) {
+      return res.status(400).json({ message: 'Konfigurasi barcode sudah berubah atau tidak sesuai Master Kanban.' })
+    }
+    const location = await prisma.inventoryLocation.findUnique({
+      where: { code: barcode.storeLocation },
+    })
+    if (!location || location.status !== 'active') {
+      return res.status(400).json({ message: 'Store Location pada barcode tidak aktif atau tidak terdaftar.' })
+    }
+    const canonicalBarcode = JSON.stringify({
+      version: 1,
+      partNumber,
+      line: part.line,
+      qty: barcode.qty,
+      operator: barcode.operator.trim(),
+      shift: barcode.shift,
+      model,
+      storeLocation: config.storeLocation,
+      kanbanType: config.kanbanType,
+      partType: part.type,
+      process: part.process,
+      nextProcess: config.nextProcess,
+    })
+    const [existingItem, existingRequest] = await Promise.all([
+      prisma.queueItem.findFirst({
+        where: { barcodePayload: canonicalBarcode, status: { not: 'complete' } },
+      }),
+      prisma.productionRequest.findFirst({
+        where: { barcodePayload: canonicalBarcode, status: 'pending' },
+      }),
     ])
-    if (existingItem || existingRequest || existingCompleted) {
-      return res.status(409).json({ message: `Kanban ${code} has already been recorded.` })
+    if (existingItem || existingRequest) {
+      return res.status(409).json({ message: `Kanban ${partNumber} · ${model} sedang diproses dan tidak dapat discan ulang.` })
     }
 
     const request = await prisma.productionRequest.create({
       data: {
-        code,
+        code: `SCAN-${randomUUID()}`,
+        barcodePayload: canonicalBarcode,
         partNumber,
-        model: body.model,
-        type: body.type,
+        model,
+        type: part.type,
         line: part.line,
-        process: body.type === 'Sub_Assy' ? (body.process ?? part.process) : null,
-        qty: body.qty,
+        process: part.type === 'Sub_Assy' ? part.process : null,
+        qty: barcode.qty,
         sourceShift: body.sourceShift,
         status: 'pending',
       },
@@ -68,11 +134,11 @@ router.post('/requests/scan', authenticate, async (req: AuthenticatedRequest, re
 
     await prisma.auditLog.create({
       data: {
-        title: `Permintaan ${code} menunggu alokasi`,
-        detail: `${partNumber} · ${body.qty} pcs · scan ${body.type}`,
-        type: body.type,
+        title: `Permintaan ${partNumber} menunggu alokasi`,
+        detail: `${partNumber} · ${barcode.qty} pcs · scan ${part.type}`,
+        type: part.type,
         line: part.line,
-        process: body.type === 'Sub_Assy' ? (body.process ?? part.process) : null,
+        process: part.type === 'Sub_Assy' ? part.process : null,
       },
     })
 
@@ -165,6 +231,7 @@ router.post(
             sourceShift: request.sourceShift,
             targetShift,
             kanban: request.code,
+            barcodePayload: request.barcodePayload,
             taken: request.qty,
             stock: 0,
             time: request.scannedAt.toISOString(),
@@ -257,7 +324,17 @@ router.get('/queue', authenticate, async (req, res, next) => {
       },
       orderBy: { no: 'asc' },
     })
-    res.json(items)
+    const configs = await prisma.kanbanPartConfig.findMany({
+      where: { partNumber: { in: Array.from(new Set(items.map((item) => item.partNumber))) } },
+      select: { partNumber: true, model: true, quantity: true },
+    })
+    const kanbanQuantities = new Map(
+      configs.map((config) => [`${config.partNumber}:${config.model}`, config.quantity]),
+    )
+    res.json(items.map((item) => ({
+      ...item,
+      kanbanQuantity: kanbanQuantities.get(`${item.partNumber}:${item.model}`) ?? null,
+    })))
   } catch (error) {
     next(error)
   }
@@ -353,7 +430,7 @@ router.post(
   requireRole('operator_assy', 'operator_sub_assy', 'operator_both', 'leader', 'admin'),
   async (req: AuthenticatedRequest, res, next) => {
     try {
-      const { operator } = printSchema.parse(req.body ?? {})
+      printSchema.parse(req.body ?? {})
       const item = await prisma.queueItem.findUnique({
         where: { id: String(req.params.id) },
       })
@@ -364,13 +441,25 @@ router.post(
       const part = await prisma.productionPart.findUnique({
         where: { partNumber: item.partNumber },
       })
-      const stock = await prisma.stockItem.findUnique({
-        where: { partNumber: item.partNumber },
+      const kanbanConfig = await prisma.kanbanPartConfig.findUnique({
+        where: { partNumber_model: { partNumber: item.partNumber, model: item.model } },
       })
-      const packaging = part?.packaging ?? stock?.packaging ?? 0
-      if (!packaging) {
+      if (!part || !kanbanConfig) {
         return res.status(400).json({
-          message: `Standard packaging for ${item.partNumber} is not configured.`,
+          message: `Konfigurasi Kanban untuk ${item.partNumber} · ${item.model} belum tersedia.`,
+        })
+      }
+      if (!kanbanConfig.quantity) {
+        return res.status(400).json({
+          message: `Jumlah Kanban untuk ${item.partNumber} · ${item.model} belum dikonfigurasi.`,
+        })
+      }
+      const location = await prisma.inventoryLocation.findUnique({
+        where: { code: kanbanConfig.storeLocation },
+      })
+      if (!location || location.status !== 'active') {
+        return res.status(400).json({
+          message: `Store Location ${kanbanConfig.storeLocation} tidak aktif atau tidak terdaftar.`,
         })
       }
 
@@ -381,11 +470,29 @@ router.post(
         })
       }
 
-      const totalQty = Math.min(packaging, remainingQty)
+      const totalQty = Math.min(kanbanConfig.quantity, remainingQty)
       const completedKanbans = item.printedKanbans + 1
-      const totalKanbans = Math.ceil(item.taken / packaging)
+      const totalKanbans = Math.ceil(item.taken / kanbanConfig.quantity)
       const completedAt = new Date()
-      const operatorName = operator ?? req.user!.name
+      const operatorName = req.user!.name
+      const shift = item.targetShift
+      if (shift !== 1 && shift !== 2) {
+        return res.status(400).json({ message: 'Antrean harus dialokasikan ke shift sebelum cetak.' })
+      }
+      const barcodePayload = JSON.stringify({
+        version: 1,
+        partNumber: item.partNumber,
+        line: item.line ?? part.line,
+        qty: totalQty,
+        operator: operatorName,
+        shift,
+        model: item.model,
+        storeLocation: kanbanConfig.storeLocation,
+        kanbanType: kanbanConfig.kanbanType,
+        partType: item.type,
+        process: part.process,
+        nextProcess: kanbanConfig.nextProcess,
+      })
 
       const { box, nextPrintedQty } = await prisma.$transaction(async (tx) => {
         const createdBox = await tx.completedBox.create({
@@ -394,7 +501,7 @@ router.post(
             type: item.type,
             line: item.line,
             qty: totalQty,
-            kanban: `${item.kanban}-${String(completedKanbans).padStart(2, '0')}`,
+            kanban: barcodePayload,
             completedAt,
             completedAtEpoch: BigInt(completedAt.getTime()),
             date: dateKey(completedAt),
@@ -428,7 +535,7 @@ router.post(
 
         await tx.auditLog.create({
           data: {
-            title: `Kanban ${createdBox.kanban} dicetak (${completedKanbans}/${totalKanbans})`,
+            title: `Kanban ${item.partNumber} dicetak (${completedKanbans}/${totalKanbans})`,
             detail: `${item.partNumber} · ${totalQty} pcs selesai produksi`,
             type: item.type,
             line: item.line,

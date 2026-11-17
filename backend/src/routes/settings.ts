@@ -108,6 +108,42 @@ const settingsSchema = z.object({
   value: z.unknown(),
 })
 
+const productionCapacitySchema = z.object({
+  value: z.object({
+    pcsPerHour: z.number().int().positive(),
+  }),
+})
+
+router.get('/production-capacity', async (_req, res, next) => {
+  try {
+    const setting = await prisma.appSetting.findUnique({
+      where: { key: 'production-capacity' },
+    })
+    if (!setting) return res.json({ pcsPerHour: 40 })
+    const parsed = z.object({ pcsPerHour: z.number().int().positive() }).safeParse(setting.value)
+    if (!parsed.success) {
+      return res.status(500).json({ message: 'Pengaturan kemampuan produksi per jam tidak valid.' })
+    }
+    res.json(parsed.data)
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.put('/production-capacity', requireRole('admin'), async (req, res, next) => {
+  try {
+    const body = productionCapacitySchema.parse(req.body)
+    const setting = await prisma.appSetting.upsert({
+      where: { key: 'production-capacity' },
+      update: { value: body.value },
+      create: { key: 'production-capacity', value: body.value },
+    })
+    res.json(setting.value)
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.get('/:key', async (req, res, next) => {
   try {
     const setting = await prisma.appSetting.findUnique({

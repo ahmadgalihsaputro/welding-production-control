@@ -30,8 +30,8 @@ dianggap aktif hanya karena menu atau halaman integrasinya tersedia.
 3. Membantu operator melihat pekerjaan sesuai role, line, proses, area kerja, dan shift aktif.
 4. Mencatat OK/NG serta aktivitas penting dengan waktu, part, shift, line/proses, dan operator.
 5. Menghubungkan permintaan/pengeluaran/penerimaan material dengan jumlah stok dan ledger.
-6. Menyediakan master data yang konsisten sebagai dasar perhitungan kapasitas, BOM, routing,
-   packaging, kanban, dan laporan.
+6. Menyediakan master data yang konsisten sebagai dasar perhitungan kapasitas, BOM, stock policy,
+   kanban, dan laporan.
 7. Memberikan dashboard/laporan untuk memantau produksi, NG, antrean, material, stok, dan audit.
 8. Mengurangi input ganda: misalnya penyelesaian box/kanban ikut memperbarui antrean dan hasil
    otomatis sesuai aturan yang sudah diterapkan.
@@ -63,8 +63,8 @@ dianggap aktif hanya karena menu atau halaman integrasinya tersedia.
   box, dan audit.
 - Material Control: request, pickup, return, receiving, external material.
 - Inventory Control: stock overview, buffer, store, ledger, adjustment.
-- Master Data: struktur produksi, model, part, BOM, routing, cycle time/capacity, mesin, stock
-  policy, lokasi, shift, dan konfigurasi kanban.
+- Master Data: model, part, BOM, cycle time/capacity, mesin/line, stock policy, lokasi, shift,
+  dan konfigurasi kanban.
 - Reports dan pengaturan aplikasi.
 - Import/seed data awal dari workbook yang tersedia.
 
@@ -74,9 +74,9 @@ Modul Database adalah tempat role berwenang mengelola master data operasional. D
 harus persisten di PostgreSQL dan menjadi sumber yang sama bagi production, material, inventory,
 dan report—bukan salinan yang hanya berlaku di browser.
 
-Target pengelolaan meliputi user, kredensial, role dan work area; line/robot, proses, mesin/stasiun;
-model dan part; BOM; routing dan cycle time; jumlah standar pcs per wadah; stock policy,
-saldo/lokasi inventory, dan buffer.
+Target pengelolaan meliputi user, kredensial, role dan work area; mesin/line; model dan part;
+komposisi BOM per part Assy; cycle time; jumlah standar pcs; stock policy, saldo/lokasi inventory,
+dan buffer.
 
 Wadah standar dicatat sebagai satu angka pcs per wadah. Penyebutan “box” atau “pallet” menyesuaikan
 ukuran/jenis barang; saat ini tidak ada konversi terpisah box-per-pallet.

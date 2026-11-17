@@ -4,18 +4,11 @@ import { Link } from 'react-router-dom'
 import { BrandMark } from '../../components/brand/Logo'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
+import { Callout } from '../../components/ui/Callout'
 import { useQueue } from '../../contexts/QueueContext'
+import { parseKanbanBarcode, scannedKanbanFromPayload } from '../../lib/kanbanBarcode'
 import { formatNumber } from '../../lib/utils'
 import type { ScannedKanban } from '../../types'
-
-const kanbanCatalog: ScannedKanban[] = [
-  { code: 'KN-ASSY-88213', partNumber: '75110B000P', model: 'RV', type: 'Assy', qty: 50 },
-  { code: 'KN-ASSY-88214', partNumber: '5220BA42', model: 'RN', type: 'Assy', qty: 78 },
-  { code: 'KN-SA-2611-045', partNumber: '5220K814', model: 'RN', type: 'Sub Assy', process: 'SS.H', qty: 70 },
-  { code: 'KN-SA-2611-046', partNumber: '50162B000P', model: 'RN', type: 'Sub Assy', process: 'SS.M', qty: 140 },
-  { code: 'KN-ASSY-88215', partNumber: '5220AU50', model: 'RN', type: 'Assy', qty: 39 },
-  { code: 'KN-ASSY-88216', partNumber: '75114W000P', model: 'RNE', type: 'Assy', qty: 35 },
-]
 
 interface ScanFeedback {
   ok: boolean
@@ -37,20 +30,21 @@ export function SupplyScanPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const normalized = code.trim().toUpperCase()
-    if (!normalized) {
+    const rawCode = code.trim()
+    if (!rawCode) {
       setFeedback({ ok: false, text: 'Scan atau masukkan kode kanban terlebih dahulu.' })
       return
     }
 
-    const scan = kanbanCatalog.find((item) => item.code === normalized)
-    if (!scan) {
+    const payload = parseKanbanBarcode(rawCode)
+    if (!payload) {
       setFeedback({
         ok: false,
-        text: `Kanban ${normalized} tidak dikenali. Gunakan salah satu contoh kanban di bawah.`,
+        text: 'Barcode tidak berisi payload Kanban yang valid. Pastikan scan barcode yang dicetak dari sistem.',
       })
       return
     }
+    const scan = scannedKanbanFromPayload(rawCode, payload)
 
     setSubmitting(true)
     try {
@@ -62,7 +56,7 @@ export function SupplyScanPage() {
 
       setFeedback({
         ok: true,
-        text: `Permintaan ${scan.code} masuk antrean Admin Robot ${result.request.line.slice(-1)}. Admin menentukan shift produksinya.`,
+        text: `Permintaan ${scan.partNumber} masuk antrean line ${result.request.line}. Admin menentukan shift produksinya.`,
         scan,
         sourceShift: result.request.sourceShift,
         line: result.request.line,
@@ -89,8 +83,7 @@ export function SupplyScanPage() {
             </span>
             <h2>Scan Kanban</h2>
             <p>
-              Scan kanban Assy atau Sub Assy. Sistem otomatis membaca tipe kanban dan
-              merutekannya ke antrean Admin Robot G/H sesuai mapping part number.
+              Scan barcode Kanban. Sistem membaca PN, model, line, jumlah, tipe, proses, operator, dan shift dari payload barcode.
             </p>
           </div>
 
@@ -106,7 +99,7 @@ export function SupplyScanPage() {
                   className="input"
                   value={code}
                   onChange={(event) => setCode(event.target.value)}
-                  placeholder="Scan barcode atau ketik kode kanban"
+                  placeholder="Scan barcode Kanban"
                   autoComplete="off"
                   autoFocus
                 />
@@ -184,25 +177,9 @@ export function SupplyScanPage() {
             </div>
           </div>
 
-          <div className="supply-scan-samples">
-            <span>Contoh scan demo:</span>
-            <div className="supply-scan-samples__list">
-              {kanbanCatalog.map((item) => (
-                <button
-                  type="button"
-                  key={item.code}
-                  className="supply-scan-sample"
-                  onClick={() => {
-                    setCode(item.code)
-                    setFeedback(null)
-                  }}
-                >
-                  {item.code}
-                  <em>{item.model} · {item.type}</em>
-                </button>
-              ))}
-            </div>
-          </div>
+          <Callout tone="info">
+            Barcode Kanban yang sama dapat dipakai kembali setelah permintaan sebelumnya selesai diproses.
+          </Callout>
 
           <div className="supply-scan-foot">
             <span>{formatNumber(assyCount + subAssyCount)} permintaan menunggu alokasi</span>

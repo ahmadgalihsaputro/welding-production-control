@@ -54,7 +54,38 @@ export interface MasterUser {
   createdAt: string
   updatedAt: string
   workAreas: MasterUserWorkArea[]
+  partSkills: Array<{
+    part: Pick<ProductionPartRecord, 'partNumber' | 'line' | 'type' | 'process' | 'models'>
+  }>
+  shiftMode: 'rotating' | 'non_shift'
+  shiftBase: 1 | 2
+  shiftAnchorDate: string | null
+  currentShift: 1 | 2 | null
 }
+
+export interface DeviceRecord {
+  id: string
+  name: string
+  type: 'Tablet' | 'PC' | 'Scanner' | 'Printer'
+  location: string
+  assignedTo: string | null
+  status: 'online' | 'offline' | 'maintenance'
+  lastSeen: string | null
+  connectionType: 'wireless' | 'wired' | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeviceInput {
+  name: string
+  type: 'Tablet' | 'PC' | 'Scanner' | 'Printer'
+  location: string
+  assignedTo?: string | null
+  status?: 'online' | 'offline' | 'maintenance'
+  connectionType?: 'wireless' | 'wired'
+}
+
+export type UpdateDeviceInput = Partial<DeviceInput>
 
 export interface CreateUserInput {
   employeeId: string
@@ -67,7 +98,11 @@ export interface CreateUserInput {
   line: string
   initials?: string
   status?: UserStatus
-  workAreaIds: string[]
+  workAreaIds?: string[]
+  partNumbers?: string[]
+  shiftMode?: 'rotating' | 'non_shift'
+  shiftBase?: 1 | 2
+  shiftAnchorDate?: string
 }
 
 export interface UpdateUserInput {
@@ -80,6 +115,10 @@ export interface UpdateUserInput {
   status?: UserStatus
   password?: string
   workAreaIds?: string[]
+  partNumbers?: string[]
+  shiftMode?: 'rotating' | 'non_shift'
+  shiftBase?: 1 | 2
+  shiftAnchorDate?: string | null
 }
 
 export interface WorkAreaInput {
@@ -129,7 +168,7 @@ export function deleteWorkArea(id: string) {
 }
 
 export type MasterStatus = 'active' | 'inactive'
-export type PartType = 'Assy' | 'Sub_Assy'
+export type PartType = 'Assy' | 'Sub_Assy' | 'Press_Part' | 'Child_Part' | 'Bolt' | 'Nut'
 
 export interface ProductionPartRecord {
   partNumber: string
@@ -456,4 +495,116 @@ export function deleteStockPolicy(partNumber: string) {
   return api.delete<{ ok: boolean }>(
     `/master/stock-policy/${encodeURIComponent(partNumber)}`,
   )
+}
+
+export interface KanbanConfigRecord {
+  id: string
+  type: string
+  prefix: string
+  format: string
+  fields: string[]
+  template: string
+  active: boolean
+}
+
+export type KanbanConfigInput = Omit<KanbanConfigRecord, 'id'>
+
+export interface KanbanPartConfigRecord {
+  id: string
+  partNumber: string
+  model: string
+  quantity: number
+  storeLocation: string
+  kanbanType: 'KD' | 'Reguler'
+  nextProcess: string
+  line: string
+  process: string
+  partType: PartType
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KanbanPartConfigInput {
+  partNumber: string
+  model: string
+  quantity: number
+  storeLocation: string
+  kanbanType: 'KD' | 'Reguler'
+  nextProcess: string
+}
+
+export interface InventoryLocationRecord {
+  id: string
+  code: string
+  name: string
+  type: string
+  line: string
+  capacity: number
+  status: MasterStatus
+}
+
+export function listInventoryLocations() {
+  return api.get<InventoryLocationRecord[]>('/master/locations')
+}
+
+export function listKanbanPartConfigs() {
+  return api.get<KanbanPartConfigRecord[]>('/master/kanban-items')
+}
+
+export function createKanbanPartConfig(input: KanbanPartConfigInput) {
+  return api.post<KanbanPartConfigRecord>('/master/kanban-items', input)
+}
+
+export function updateKanbanPartConfig(id: string, input: KanbanPartConfigInput) {
+  return api.patch<KanbanPartConfigRecord>(`/master/kanban-items/${encodeURIComponent(id)}`, input)
+}
+
+export function deleteKanbanPartConfig(id: string) {
+  return api.delete<{ ok: boolean }>(`/master/kanban-items/${encodeURIComponent(id)}`)
+}
+
+export const DEFAULT_PRODUCTION_CAPACITY_PER_HOUR = 40
+
+export async function getProductionCapacityPerHour() {
+  const setting = await api.get<{ pcsPerHour: number }>('/settings/production-capacity')
+  if (
+    typeof setting.pcsPerHour === 'number' &&
+    Number.isInteger(setting.pcsPerHour) &&
+    setting.pcsPerHour > 0
+  ) {
+    return setting.pcsPerHour
+  }
+  throw new Error('Pengaturan kemampuan produksi per jam tidak valid.')
+}
+
+export function updateProductionCapacityPerHour(pcsPerHour: number) {
+  return api.put<{ pcsPerHour: number }>('/settings/production-capacity', { value: { pcsPerHour } })
+}
+
+export function listKanbanConfigs() {
+  return api.get<KanbanConfigRecord[]>('/master/kanban')
+}
+
+export function createKanbanConfig(input: KanbanConfigInput) {
+  return api.post<KanbanConfigRecord>('/master/kanban', input)
+}
+
+export function updateKanbanConfig(id: string, input: Partial<KanbanConfigInput>) {
+  return api.patch<KanbanConfigRecord>(`/master/kanban/${encodeURIComponent(id)}`, input)
+}
+
+export function listDevices() {
+  return api.get<DeviceRecord[]>('/users/devices')
+}
+
+export function createDevice(input: DeviceInput) {
+  return api.post<DeviceRecord>('/users/devices', input)
+}
+
+export function updateDevice(id: string, input: UpdateDeviceInput) {
+  return api.patch<DeviceRecord>(`/users/devices/${encodeURIComponent(id)}`, input)
+}
+
+export function deleteDevice(id: string) {
+  return api.delete<{ ok: boolean }>(`/users/devices/${encodeURIComponent(id)}`)
 }

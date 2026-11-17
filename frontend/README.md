@@ -20,8 +20,9 @@ direpresentasikan sebagai halaman terpisah dengan data demo yang saling terhubun
   external material, penerimaan material.
 - **Inventory Control** — stock overview, production buffer, Assy store, Sub Assy store,
   mutasi stok, stock adjustment.
-- **Master Data** — production structure, model, part number, BOM, routing, machine,
-  packaging & stock policy, inventory location, shift, kanban configuration.
+- **Master Data** — model, part number, BOM (pilih Assy untuk melihat komposisi), cycle time
+  dengan target item/jam 85%, machine/line, stock policy, inventory location, shift, dan
+  konfigurasi kanban yang dapat diedit.
 - **Reports** — production, inventory, material usage, NG (pareto), transaction.
 - **User Management** — user list, roles & permissions, device management.
 - **Settings** — profile, preferences, notifications, FSS integration, barcode & printing,
@@ -143,12 +144,10 @@ jenis pekerjaan yang bisa dibuka. Stasiun scan di `/supply/scan` juga memerlukan
 Penugasan area tersimpan di database dan diatur lewat **User Management → User List**. Akun demo
 OA001 mendapat seluruh area Assy Robot G; OS001 mendapat seluruh area Sub Assy Robot G.
 
-Cycle time diisi dalam **detik per pcs** pada **Master Data → Cycle Time & Capacity**. Estimasi
-durasi memakai `qty × detik/pcs`, tanpa angka cycle time contoh. ID kelompok mesin yang sama
-menandai part yang berbagi sumber daya dengan urutan bergantian—misalnya 5312C009/5312C010 memakai
-`RB-H-LR-01`; masing-masing cycle time tetap per pcs dan beban keduanya dijumlahkan pada kelompok
-mesin yang sama. Saran alokasi membandingkan beban proses/sumber daya yang sama antar shift dan
-mengarahkan permintaan dalam satu kelompok ke shift yang sama.
+Cycle time diisi dalam **detik per item** pada **Master Data → Cycle Time & Capacity**. Target
+ditampilkan dengan rumus `3600 ÷ cycle time × 0,85` dan dapat difilter berdasarkan line, tipe
+Assy/Sub Assy, serta project/model. Form User List memakai satu nilai Line/Area; penugasan area
+proses operator tetap diatur terpisah sesuai role.
 
 Shift aktif mengikuti jam lokal perangkat, hari kerja, dan konfigurasi pada **Shift & Working Hours**.
 Waktu istirahat dianggap nonaktif; waktu setelah tengah malam pada shift malam menjadi bagian dari

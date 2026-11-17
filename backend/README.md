@@ -51,12 +51,22 @@ postgresql://postgres@localhost:5433/wpc?schema=public
 
 `npm run prisma:seed` membaca langsung workbook `KOMPOSISI RB.G.xlsx` di root project:
 
-- Sheet **Komposisi** → model Assy, part Assy/Sub Assy, komponen press, bolt/nut, packaging,
-  max store, BOM, routing, dan stock item.
+- Sheet **Komposisi** → part Assy/Sub Assy, line, cycle time, model, packaging, max store,
+  komponen press/bolt-nut/child, BOM, dan stock item.
 - Sheet **Jam Kerja** → konfigurasi shift, jam kerja, dan batas overtime.
 
 Data seed bersifat idempoten (upsert): aman dijalankan ulang. BOM untuk part yang dikelola
-seed dihapus lalu dibuat ulang dari Excel.
+seed dihapus lalu dibuat ulang dari Excel. Untuk memperbarui hanya data yang berasal dari workbook,
+gunakan:
+
+```bash
+npm run prisma:sync-workbook
+```
+
+Sinkronisasi khusus ini berjalan dalam transaksi dan hanya memperbarui part produksi, kebijakan
+stock master (kategori, packaging, dan max store), BOM, model, serta shift. Stok aktual, buffer,
+safety stock, lokasi, user, dan konfigurasi lain yang sudah ada tidak ditimpa. `prisma:seed` tetap
+menjalankan seluruh proses seed termasuk data pendukung dan akun demo.
 
 Data pendukung yang ikut di-seed: model produksi, mesin, lokasi inventory, kanban config,
 device, app settings, work area, user demo, dan 5 contoh material request.
@@ -243,6 +253,7 @@ npm run typecheck      # tsc --noEmit
 npm run prisma:generate
 npm run prisma:migrate
 npm run prisma:seed
+npm run prisma:sync-workbook
 npm run db:start       # PostgreSQL lokal port 5433
 npm run db:stop
 ```

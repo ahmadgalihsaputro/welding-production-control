@@ -11,6 +11,7 @@ import {
   Timer,
   TriangleAlert,
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '../../components/ui/Badge'
@@ -20,23 +21,17 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { ProgressBar } from '../../components/ui/ProgressBar'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
+import askaLogo from '../../assets/aska_icon.png'
 import { useAuth } from '../../contexts/AuthContext'
 import { useQueue } from '../../contexts/QueueContext'
 import { formatNumber } from '../../lib/utils'
-import { stockPolicies } from '../../data/mock'
 import {
   getProductionPart,
-  getProductionParts,
   matchesProductionWorkArea,
 } from '../../data/productionLines'
 import { getShiftNumberAt } from '../../data/productionPlanning'
-import type { QueueType, RobotLine } from '../../types'
-
-// Helper: Get standard packaging qty from stockPolicies
-function getPackagingQty(partNumber: string): number | undefined {
-  const policy = stockPolicies.find((p) => p.partNumber === partNumber)
-  return policy?.packaging ?? getProductionPart(partNumber)?.packaging
-}
+import { parseKanbanBarcode } from '../../lib/kanbanBarcode'
+import type { CompletedBox, QueueType, RobotLine } from '../../types'
 
 interface ProductionQueuePageProps {
   type: QueueType
@@ -69,7 +64,9 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
   const isAdmin = user?.role === 'admin'
   const userLine: RobotLine = user?.productionLine ??
     (user?.line.includes('Robot H') ? 'Robot H' : 'Robot G')
-  const activeShift = getShiftNumberAt()
+  const activeShift = user?.shiftMode
+    ? user.currentShift ?? undefined
+    : getShiftNumberAt()
   const canOperateQueue = Boolean(
     user &&
       user.role !== 'admin' &&
@@ -77,7 +74,13 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
       (activeWorkArea?.type === type || user.role === 'leader'),
   )
   const [message, setMessage] = useState('')
+  const [printedBox, setPrintedBox] = useState<CompletedBox | null>(null)
   const [processFilter, setProcessFilter] = useState('Semua proses')
+  useEffect(() => {
+    if (!printedBox) return
+    document.body.classList.add('printing-kanban')
+    return () => document.body.classList.remove('printing-kanban')
+  }, [printedBox])
   useEffect(() => {
     setProcessFilter('Semua proses')
   }, [activeLine, activeWorkArea?.id])
@@ -132,8 +135,13 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
       setMessage(result.error ?? 'Kanban tidak ditemukan di antrian.')
       return
     }
+    if (!parseKanbanBarcode(result.box.kanban)) {
+      setMessage('Kanban tersimpan, tetapi payload barcode yang diterima tidak valid.')
+      return
+    }
+    setPrintedBox(result.box)
     setMessage(
-      `Kanban ${result.box.kanban} berhasil dicetak (${result.completedKanbans}/${result.totalKanbans}). ${result.box.qty} pcs ${result.box.partNumber} tercatat sebagai OK.`,
+      `Kanban ${result.box.partNumber} berhasil dicetak (${result.completedKanbans}/${result.totalKanbans}). ${result.box.qty} pcs tercatat sebagai OK.`,
     )
   }
 
@@ -178,12 +186,52 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
         </Callout>
       )}
       {!isAdmin && !activeShift && (
-        <Callout tone="warning" title="Di luar jam shift">
-          Waktu sekarang tidak berada pada jam kerja Shift 1 atau Shift 2. Aksi produksi dinonaktifkan.
+        <Callout tone="warning" title="User Non-shift">
+        Akun ini tidak sedang dijadwalkan pada Shift 1 atau Shift 2. Aksi produksi dinonaktifkan.
         </Callout>
       )}
 
       {message && <Callout tone={message.includes('berhasil dicetak') ? 'success' : 'warning'}>{message}</Callout>}
+
+      {printedBox && (() => {
+        const payload = parseKanbanBarcode(printedBox.kanban)
+        if (!payload) return null
+        return (
+          <section className="card kanban-printable">
+            <div className="section-head kanban-print-actions">
+              <div>
+                <h2 className="section-title">Kanban siap dicetak</h2>
+                <p className="section-sub">QR memuat semua data Kanban dan tidak memakai nomor cetak unik.</p>
+              </div>
+              <div className="row">
+                <Button variant="secondary" onClick={() => setPrintedBox(null)}>Tutup</Button>
+                <Button variant="primary" leftIcon={<Printer size={14} />} onClick={() => window.print()}>Cetak label</Button>
+              </div>
+            </div>
+            <div className="kanban-print-label">
+              <div className="kanban-print-label__header">
+                <img src={askaLogo} alt="ASKA" />
+                <strong>WPC · KANBAN</strong>
+                <span>{payload.kanbanType} · {payload.partType === 'Sub_Assy' ? 'Sub Assy' : payload.partType}</span>
+              </div>
+              <h2>{payload.partNumber}</h2>
+              <p>{payload.model} · {payload.line}</p>
+              <div className="kanban-print-label__details">
+                <div><span>Qty</span><strong>{payload.qty} pcs</strong></div>
+                <div><span>Operator</span><strong>{payload.operator}</strong></div>
+                <div><span>Shift</span><strong>Shift {payload.shift}</strong></div>
+                <div><span>Store Location</span><strong>{payload.storeLocation}</strong></div>
+                <div><span>Process</span><strong>{payload.process}</strong></div>
+                <div><span>Next Process</span><strong>{payload.nextProcess}</strong></div>
+              </div>
+              <div className="kanban-print-label__qr">
+                <QRCodeSVG value={printedBox.kanban} size={180} level="M" />
+                <small>Scan untuk membaca seluruh payload Kanban</small>
+              </div>
+            </div>
+          </section>
+        )
+      })()}
 
       <div className="kpi-grid">
         <StatCard
@@ -231,17 +279,9 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
               onChange={(event) => setProcessFilter(event.target.value)}
             >
               <option>Semua proses</option>
-              {Array.from(new Set(
-                getProductionParts('Sub Assy')
-                  .filter((part) => isAdmin
-                    ? activeLine === 'all' || part.line === activeLine
-                    : activeWorkArea
-                      ? activeWorkArea.type === 'Sub Assy' &&
-                        part.line === activeWorkArea.line &&
-                        part.process === activeWorkArea.process
-                      : part.line === userLine)
-                  .map((part) => part.process),
-              )).map((process) => (
+              {Array.from(new Set(queue.map((item) => item.process).filter((process): process is string => Boolean(process))))
+                .sort((a, b) => a.localeCompare(b))
+                .map((process) => (
                 <option key={process} value={process}>{process}</option>
               ))}
             </select>
@@ -252,12 +292,12 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
       {visibleQueue.length > 0 ? (
         <div className="queue-cards">
           {visibleQueue.map((item, index) => {
-            const packagingQty = getPackagingQty(item.partNumber)
+            const kanbanQuantity = item.kanbanQuantity
             const remainingQty = Math.max(item.taken - (item.printedQty ?? 0), 0)
             const stockRatio = (item.stock / Math.max(remainingQty, 1)) * 100
-            const totalKanbans = packagingQty ? Math.ceil(item.taken / packagingQty) : 0
-            const nextKanbanQty = packagingQty
-              ? Math.min(packagingQty, remainingQty)
+            const totalKanbans = kanbanQuantity ? Math.ceil(item.taken / kanbanQuantity) : 0
+            const nextKanbanQty = kanbanQuantity
+              ? Math.min(kanbanQuantity, remainingQty)
               : undefined
             return (
               <article
@@ -286,8 +326,8 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
                     <strong>{item.printedKanbans ?? 0}/{totalKanbans}</strong>
                   </div>
                   <div>
-                    <span>Kanban order</span>
-                    <strong className="mono">{item.kanban}</strong>
+                    <span>Qty / Kanban</span>
+                    <strong>{kanbanQuantity ? `${kanbanQuantity} pcs` : 'Belum diatur'}</strong>
                   </div>
                 </div>
 
@@ -371,7 +411,7 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
                   >
                     {nextKanbanQty
                       ? `Cetak Kanban ${Math.min((item.printedKanbans ?? 0) + 1, totalKanbans)}/${totalKanbans} · ${nextKanbanQty} pcs`
-                      : `Standar packaging ${item.partNumber} belum diatur`}
+                      : `Qty Kanban ${item.partNumber} belum diatur`}
                   </Button>
                 )}
               </article>

@@ -7,7 +7,7 @@ export type Role =
   | 'management'
 
 export type QueueType = 'Assy' | 'Sub Assy'
-export type RobotLine = 'Robot G' | 'Robot H'
+export type RobotLine = string
 export type ShiftNumber = 1 | 2
 export type QueuePriority = 'urgent' | 'normal' | 'low'
 
@@ -17,6 +17,7 @@ export interface ProductionWorkArea {
   line: RobotLine
   type: QueueType
   process: string
+  partNumbers: string[]
 }
 
 export type Tone =
@@ -42,6 +43,10 @@ export interface SessionUser {
   line: string
   productionLine?: RobotLine
   productionWorkAreaId?: string
+  currentShift?: ShiftNumber | null
+  shiftMode?: 'rotating' | 'non_shift'
+  shiftBase?: ShiftNumber
+  shiftAnchorDate?: string | null
   email: string
   initials: string
 }
@@ -74,6 +79,7 @@ export interface QueueItem {
   targetShift?: ShiftNumber
   kanban: string
   taken: number
+  kanbanQuantity?: number
   printedQty?: number
   printedKanbans?: number
   stock: number
@@ -115,6 +121,21 @@ export interface ScannedKanban {
   process?: string
   qty: number
   sourceShift?: ShiftNumber
+}
+
+export interface KanbanBarcodePayload {
+  version: 1
+  partNumber: string
+  line: string
+  qty: number
+  operator: string
+  shift: ShiftNumber
+  model: string
+  storeLocation: string
+  kanbanType: 'KD' | 'Reguler'
+  partType: 'Assy' | 'Sub_Assy'
+  process: string
+  nextProcess: string
 }
 
 export interface ProductionRequest extends ScannedKanban {
@@ -283,6 +304,7 @@ export interface Device {
   assignedTo: string
   status: 'online' | 'offline' | 'maintenance'
   lastSeen: string
+  connectionType?: 'wireless' | 'wired'
 }
 
 export interface ModelMaster {

@@ -1,10 +1,12 @@
 import { CalendarClock, Clock3, Coffee, Sun, Timer } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
+import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { StatCard } from '../../components/ui/StatCard'
 import { Toggle } from '../../components/ui/Toggle'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { shifts as initialShifts } from '../../data/mock'
 import {
   readShiftConfigs,
@@ -41,36 +43,55 @@ function loadInitialWorkdayState(): { workdays: string[]; error: string } {
 export function ShiftsPage() {
   const [shiftState, setShiftState] = useState(loadInitialShiftState)
   const [workdayState, setWorkdayState] = useState(loadInitialWorkdayState)
-  const workdays = workdayState.workdays
-  const shifts = shiftState.shifts
+  const [draftShifts, setDraftShifts] = useState<ShiftConfig[] | null>(null)
+  const [draftWorkdays, setDraftWorkdays] = useState<string[] | null>(null)
+  const [notice, setNotice] = useState('')
+  const { confirm } = useConfirmation()
+  const workdays = draftWorkdays ?? workdayState.workdays
+  const shifts = draftShifts ?? shiftState.shifts
+  const hasChanges =
+    JSON.stringify(shifts) !== JSON.stringify(shiftState.shifts) ||
+    JSON.stringify(workdays) !== JSON.stringify(workdayState.workdays)
   const availableMinutes = shifts
     .filter((shift) => shift.active)
     .reduce((sum, shift) => sum + shiftWorkMinutes(shift), 0)
 
   const updateShift = (id: string, updates: Partial<ShiftConfig>) => {
-    const next = shifts.map((shift) => (shift.id === id ? { ...shift, ...updates } : shift))
-    try {
-      saveShiftConfigs(next)
-      setShiftState({ shifts: next, error: '' })
-    } catch (error) {
-      setShiftState((current) => ({
-        ...current,
-        error: error instanceof Error ? error.message : 'Perubahan shift gagal disimpan.',
-      }))
-    }
+    setDraftShifts(shifts.map((shift) => (shift.id === id ? { ...shift, ...updates } : shift)))
   }
 
   const toggleDay = (day: string) => {
     const next = workdays.includes(day)
       ? workdays.filter((item) => item !== day)
       : [...workdays, day]
+    setDraftWorkdays(next)
+  }
+
+  const saveChanges = async () => {
+    if (!hasChanges) return
+    const confirmed = await confirm({
+      title: 'Konfirmasi perubahan shift',
+      message: 'Simpan perubahan jam kerja, jumlah operator, lembur, dan hari kerja?',
+      confirmLabel: 'Simpan perubahan',
+    })
+    if (!confirmed) return
+
     try {
-      saveWorkdays(next)
-      setWorkdayState({ workdays: next, error: '' })
+      if (JSON.stringify(shifts) !== JSON.stringify(shiftState.shifts)) {
+        saveShiftConfigs(shifts)
+        setShiftState({ shifts, error: '' })
+        setDraftShifts(null)
+      }
+      if (JSON.stringify(workdays) !== JSON.stringify(workdayState.workdays)) {
+        saveWorkdays(workdays)
+        setWorkdayState({ workdays, error: '' })
+        setDraftWorkdays(null)
+      }
+      setNotice('Perubahan shift dan hari kerja berhasil disimpan.')
     } catch (error) {
-      setWorkdayState((current) => ({
+      setShiftState((current) => ({
         ...current,
-        error: error instanceof Error ? error.message : 'Perubahan hari kerja gagal disimpan.',
+        error: error instanceof Error ? error.message : 'Perubahan shift gagal disimpan.',
       }))
     }
   }
@@ -90,8 +111,14 @@ export function ShiftsPage() {
             })}
           </span>
         }
+        actions={
+          <Button variant="primary" disabled={!hasChanges} onClick={() => void saveChanges()}>
+            Simpan perubahan
+          </Button>
+        }
       />
 
+      {notice && <Callout tone="success">{notice}</Callout>}
       {shiftState.error && (
         <Callout tone="danger" title="Konfigurasi shift bermasalah">
           {shiftState.error}

@@ -576,6 +576,278 @@
   left: 12px;
 }
 
+.bom-component-search__results {
+  display: grid;
+  gap: 3px;
+  max-height: 240px;
+  margin-top: 5px;
+  padding: 5px;
+  overflow: auto;
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: var(--glass-bg-strong, var(--glass-bg));
+}
+
+.bom-component-search__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bom-component-search__option:hover:not(:disabled) {
+  background: var(--inset-bg);
+}
+
+.bom-component-search__option span:last-child,
+.bom-component-search__empty {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.bom-component-search__option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bom-component-search__empty {
+  padding: 7px 10px;
+}
+
+.bom-component-search__selected {
+  margin-top: 7px;
+}
+
+.master-machine-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.master-machine-form .field-hint {
+  min-height: 26px;
+}
+
+.master-machine-form .form-actions {
+  margin-top: 2px;
+  justify-content: flex-end;
+}
+
+.master-model-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.master-model-form__actions {
+  margin-top: 14px;
+}
+
+.bom-add-form {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.48fr);
+  align-items: start;
+  margin-top: 16px;
+}
+
+.bom-add-form > .field:first-child {
+  position: relative;
+}
+
+.bom-add-form__actions {
+  grid-column: 1 / -1;
+  margin-top: -6px;
+  justify-content: flex-end;
+}
+
+.bom-add-form .bom-component-search__results {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 3px);
+  right: 0;
+  left: 0;
+  margin-top: 0;
+}
+
+.stock-policy-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.stock-policy-form .form-actions {
+  margin-top: 2px;
+}
+
+.stock-policy-page .table-toolbar {
+  align-items: flex-end;
+}
+
+.stock-policy-page .table-toolbar > .toolbar-group {
+  flex: 1 1 360px;
+}
+
+.stock-policy-page .table-toolbar .search-inline {
+  flex: 0 1 280px;
+}
+
+.work-skill-list {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.work-skill-list summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.work-skill-list summary::-webkit-details-marker {
+  display: none;
+}
+
+.work-skill-list__items {
+  position: static;
+  display: grid;
+  gap: 3px;
+  width: min(340px, 100%);
+  max-height: 180px;
+  margin-top: 6px;
+  padding: 7px;
+  overflow-y: auto;
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: var(--glass-bg-strong, var(--glass-bg));
+  box-shadow: var(--shadow-soft);
+}
+
+.work-skill-list__items > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+.work-skill-list__items small {
+  color: var(--muted);
+}
+
+.kanban-config-preview {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.3fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--glass-line);
+}
+
+.kanban-config-preview > div:first-child h3 {
+  font-size: 13px;
+}
+
+.kanban-config-preview > div:first-child p,
+.kanban-config-preview__qr span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.kanban-config-preview__label {
+  width: min(100%, 520px);
+  padding: 16px;
+  border: 1px solid #d5dce5;
+  border-radius: 9px;
+  background: #fff;
+  color: #112138;
+}
+
+.kanban-config-preview__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #9aa8b8;
+  font-size: 11px;
+}
+
+.kanban-config-preview__label h4 {
+  margin-top: 10px;
+  color: #112138;
+  font-size: 18px;
+}
+
+.kanban-config-preview__details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px 12px;
+  margin-top: 12px;
+}
+
+.kanban-config-preview__details small {
+  display: block;
+  color: #687d94;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.kanban-config-preview__details strong {
+  display: block;
+  margin-top: 2px;
+  color: #112138;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.kanban-config-preview__saved {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kanban-config-preview__qr {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px;
+  border: 1px dashed var(--glass-line);
+  border-radius: 9px;
+}
+
+.kanban-config-preview__label .kanban-config-preview__qr {
+  width: fit-content;
+  margin: 14px auto 0;
+  padding: 0;
+  border: 0;
+}
+
+.inventory-location-filters {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: min(100%, 620px);
+}
+
+.inventory-location-filters > .select {
+  flex: 0 1 165px;
+  min-width: 130px;
+}
+
+.inventory-location-filters .input-wrap {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
 .production-board {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
@@ -1055,6 +1327,107 @@
     transparent 17px 20px
   );
   opacity: 0.85;
+}
+
+.kanban-print-label {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  padding: 22px;
+  border: 1px solid #d5dce5;
+  border-radius: 8px;
+  background: #fff;
+  color: #112138;
+}
+
+.kanban-print-label__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #9aa8b8;
+  font-size: 11px;
+}
+
+.kanban-print-label__header img {
+  width: 58px;
+  max-height: 34px;
+  object-fit: contain;
+}
+
+.kanban-print-label h2 {
+  margin-top: 12px;
+  font-size: 22px;
+  color: #112138;
+}
+
+.kanban-print-label p {
+  margin-top: 2px;
+  color: #52657a;
+}
+
+.kanban-print-label__details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin-top: 16px;
+}
+
+.kanban-print-label__details span {
+  display: block;
+  color: #687d94;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.kanban-print-label__details strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.kanban-print-label__qr {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.kanban-print-label__qr small {
+  color: #52657a;
+  font-size: 9px;
+}
+
+@media print {
+  body.printing-kanban * {
+    visibility: hidden !important;
+  }
+
+  body.printing-kanban .kanban-printable,
+  body.printing-kanban .kanban-printable * {
+    visibility: visible !important;
+  }
+
+  body.printing-kanban .kanban-printable {
+    position: absolute !important;
+    inset: 0 auto auto 0;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  body.printing-kanban .kanban-print-actions {
+    display: none !important;
+  }
+
+  body.printing-kanban .kanban-print-label {
+    width: 100%;
+    max-width: 90mm;
+    border: 0;
+    padding: 4mm;
+  }
 }
 
 .scan-result {
@@ -1905,28 +2278,23 @@
   min-width: 130px;
 }
 
-.user-cell {
+.user-list-cell__meta {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
-.user-cell__copy {
-  min-width: 0;
+.user-list-toolbar {
+  align-items: center;
 }
 
-.user-cell__copy strong {
-  display: block;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-soft);
+.user-list-role-filter {
+  flex: 0 1 230px;
 }
 
-.user-cell__copy span {
-  display: block;
-  font-size: 9px;
-  color: var(--muted);
+.user-list-toolbar .search-inline {
+  flex: 0 1 340px;
 }
 
 /* ---------- Forbidden / not found ---------- */
@@ -2033,9 +2401,26 @@
   .report-filters .btn {
     width: 100%;
   }
+
+  .stock-policy-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
+  .master-model-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .user-list-toolbar .user-list-role-filter,
+  .user-list-toolbar .search-inline {
+    flex: 1 1 240px;
+  }
+
+  .inventory-location-filters {
+    flex-wrap: wrap;
+  }
+
   .welcome-card {
     flex-direction: column;
     align-items: flex-start;
@@ -2073,6 +2458,48 @@
 }
 
 @media (max-width: 640px) {
+  .master-machine-form,
+  .master-model-form,
+  .bom-add-form,
+  .stock-policy-form,
+  .kanban-config-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-location-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .user-list-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .user-list-toolbar .user-list-role-filter,
+  .user-list-toolbar .search-inline {
+    width: 100%;
+    max-width: none;
+  }
+
+  .inventory-location-filters > .select {
+    min-width: 0;
+  }
+
+  .inventory-location-filters .input-wrap {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .bom-add-form__actions {
+    grid-column: 1;
+  }
+
+  .kanban-config-preview__details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .welcome-card {
     padding: 18px;
     gap: 16px;

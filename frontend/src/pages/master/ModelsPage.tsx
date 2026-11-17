@@ -10,6 +10,7 @@ import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Tabs } from '../../components/ui/Tabs'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { describeApiError } from '../../lib/api'
 import {
   createModel,
@@ -45,6 +46,7 @@ function formatDate(value: string): string {
 }
 
 export function ModelsPage() {
+  const { confirm } = useConfirmation()
   const [models, setModels] = useState<ProductionModelRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -118,6 +120,12 @@ export function ModelsPage() {
       setError('Nama model wajib diisi.')
       return
     }
+    const confirmed = await confirm({
+      title: form.id ? 'Konfirmasi perubahan model' : 'Konfirmasi model baru',
+      message: `${form.id ? 'Simpan perubahan pada' : 'Tambahkan'} model ${code}?`,
+      confirmLabel: form.id ? 'Simpan perubahan' : 'Tambah model',
+    })
+    if (!confirmed) return
 
     setSaving(true)
     setError('')
@@ -142,12 +150,13 @@ export function ModelsPage() {
 
   const toggleStatus = async (model: ProductionModelRecord) => {
     const nextStatus: MasterStatus = model.status === 'active' ? 'inactive' : 'active'
-    if (
-      nextStatus === 'inactive' &&
-      !window.confirm(`Nonaktifkan model ${model.code}? Part yang sudah memakai model ini tidak dihapus.`)
-    ) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Konfirmasi status model',
+      message: `${nextStatus === 'active' ? 'Aktifkan' : 'Nonaktifkan'} model ${model.code}? Part yang sudah memakai model ini tetap tercatat.`,
+      confirmLabel: nextStatus === 'active' ? 'Aktifkan' : 'Nonaktifkan',
+      tone: nextStatus === 'active' ? 'primary' : 'danger',
+    })
+    if (!confirmed) return
     setBusyId(model.id)
     setError('')
     setNotice('')
@@ -163,13 +172,13 @@ export function ModelsPage() {
   }
 
   const removeModel = async (model: ProductionModelRecord) => {
-    if (
-      !window.confirm(
-        `Hapus model ${model.code}? Model yang masih dipakai part, routing, atau jadwal tidak dapat dihapus.`,
-      )
-    ) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Konfirmasi hapus model',
+      message: `Hapus model ${model.code}? Model yang masih dipakai part, routing, atau jadwal tidak dapat dihapus.`,
+      confirmLabel: 'Hapus model',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setBusyId(model.id)
     setError('')
     setNotice('')
@@ -333,7 +342,7 @@ export function ModelsPage() {
             </div>
             <Badge tone="success">Terhubung database</Badge>
           </div>
-          <div className="form-grid">
+          <div className="form-grid master-model-form">
             <Field
               label="Kode model"
               htmlFor="model-code"
@@ -382,7 +391,7 @@ export function ModelsPage() {
             Model yang masih dipakai part, routing, atau jadwal tidak dapat dihapus. Gunakan status
             inactive agar histori tetap utuh.
           </Callout>
-          <div className="form-actions">
+          <div className="form-actions master-model-form__actions">
             <Button variant="secondary" onClick={closeForm} disabled={saving}>
               Batal
             </Button>

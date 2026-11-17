@@ -7,44 +7,47 @@ import { DataTable, type Column } from '../../components/ui/DataTable'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { describeApiError } from '../../lib/api'
 import {
+  listMachines,
   listParts,
   updatePart,
+  type MachineRecord,
   type ProductionPartRecord,
 } from '../../lib/masterApi'
 
 interface CycleEdit {
   cycleTime: string
-  cycleGroupId: string
 }
 
 function editFromPart(part: ProductionPartRecord): CycleEdit {
   return {
     cycleTime: part.cycleTime === null ? '' : String(part.cycleTime),
-    cycleGroupId: part.cycleGroupId ?? '',
   }
 }
 
-function normalizeGroup(value: string): string | null {
-  return value.trim().toUpperCase() || null
-}
-
 export function CycleTimePage() {
+  const { confirm } = useConfirmation()
   const [parts, setParts] = useState<ProductionPartRecord[]>([])
+  const [machines, setMachines] = useState<MachineRecord[]>([])
   const [edits, setEdits] = useState<Record<string, CycleEdit>>({})
   const [loading, setLoading] = useState(true)
   const [savingPart, setSavingPart] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
+  const [lineFilter, setLineFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [modelFilter, setModelFilter] = useState('all')
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const nextParts = await listParts()
+      const [nextParts, nextMachines] = await Promise.all([listParts(), listMachines()])
       setParts(nextParts)
+      setMachines(nextMachines)
       setEdits(Object.fromEntries(nextParts.map((part) => [part.partNumber, editFromPart(part)])))
     } catch (loadError) {
       setError(describeApiError(loadError, 'Data cycle time gagal dimuat.'))
@@ -59,31 +62,35 @@ export function CycleTimePage() {
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase()
-    return parts.filter(
-      (part) =>
+    return parts.filter((part) => part.type === 'Assy' || part.type === 'Sub_Assy').filter((part) => {
+      const matchesFilters =
+        (lineFilter === 'all' || part.line === lineFilter) &&
+        (typeFilter === 'all' || part.type === typeFilter) &&
+        (modelFilter === 'all' || part.models.includes(modelFilter))
+      const matchesSearch =
         !needle ||
         part.partNumber.toLowerCase().includes(needle) ||
         part.process.toLowerCase().includes(needle) ||
-        part.models.some((model) => model.toLowerCase().includes(needle)),
-    )
-  }, [parts, search])
+        part.models.some((model) => model.toLowerCase().includes(needle))
+      return matchesFilters && matchesSearch
+    })
+  }, [parts, search, lineFilter, typeFilter, modelFilter])
 
-  const configuredCount = parts.filter((part) => part.cycleTime !== null).length
-  const groupedPartCount = parts.filter((part) => part.cycleGroupId).length
+  const productionParts = parts.filter((part) => part.type === 'Assy' || part.type === 'Sub_Assy')
+  const configuredCount = productionParts.filter((part) => part.cycleTime !== null).length
+  const lines = [...new Set([...machines.map((machine) => machine.line), ...productionParts.map((part) => part.line)])].sort()
+  const models = [...new Set(productionParts.flatMap((part) => part.models))].sort()
 
   const updateEdit = (partNumber: string, patch: Partial<CycleEdit>) => {
     setEdits((current) => ({
       ...current,
-      [partNumber]: { ...(current[partNumber] ?? { cycleTime: '', cycleGroupId: '' }), ...patch },
+      [partNumber]: { ...(current[partNumber] ?? { cycleTime: '' }), ...patch },
     }))
   }
 
   const isDirty = (part: ProductionPartRecord): boolean => {
     const edit = edits[part.partNumber] ?? editFromPart(part)
-    return (
-      edit.cycleTime.trim() !== (part.cycleTime === null ? '' : String(part.cycleTime)) ||
-      normalizeGroup(edit.cycleGroupId) !== part.cycleGroupId
-    )
+    return edit.cycleTime.trim() !== (part.cycleTime === null ? '' : String(part.cycleTime))
   }
 
   const saveRow = async (part: ProductionPartRecord) => {
@@ -94,6 +101,12 @@ export function CycleTimePage() {
       setError('Cycle time harus berupa angka lebih besar dari 0 detik, atau kosongkan bila belum diatur.')
       return
     }
+    const confirmed = await confirm({
+      title: 'Konfirmasi perubahan cycle time',
+      message: `Simpan cycle time ${cycleTime === null ? 'kosong' : `${cycleTime} detik`} untuk ${part.partNumber}?`,
+      confirmLabel: 'Simpan perubahan',
+    })
+    if (!confirmed) return
 
     setSavingPart(part.partNumber)
     setError('')
@@ -101,7 +114,6 @@ export function CycleTimePage() {
     try {
       const updated = await updatePart(part.partNumber, {
         cycleTime,
-        cycleGroupId: normalizeGroup(edit.cycleGroupId),
       })
       setParts((current) =>
         current.map((item) => (item.partNumber === updated.partNumber ? updated : item)),
@@ -170,37 +182,15 @@ export function CycleTimePage() {
     },
     {
       key: 'capacity',
-      header: 'Kapasitas pcs/jam',
+      header: 'Target item/jam (85%)',
       align: 'right',
       render: (part) => {
         const edit = edits[part.partNumber] ?? editFromPart(part)
-        const value = edit.cycleTime.trim() === '' ? part.cycleTime : Number(edit.cycleTime)
+        const value = edit.cycleTime.trim() === '' ? null : Number(edit.cycleTime)
         return value && Number.isFinite(value) && value > 0 ? (
-          <span className="mono">{`${(3600 / value).toFixed(1)} pcs`}</span>
+          <span className="mono">{`${Math.round((3600 / value) * 0.85)} item`}</span>
         ) : (
           <Badge tone="warning">Belum diatur</Badge>
-        )
-      },
-    },
-    {
-      key: 'cycleGroup',
-      header: 'Kelompok mesin bergantian',
-      render: (part) => {
-        const edit = edits[part.partNumber] ?? editFromPart(part)
-        return (
-          <label className="row" style={{ gap: 7 }}>
-            <input
-              className="input mono"
-              style={{ width: 150, minHeight: 34 }}
-              value={edit.cycleGroupId}
-              placeholder="Mandiri"
-              aria-label={`Kelompok mesin bergantian ${part.partNumber}`}
-              onChange={(event) =>
-                updateEdit(part.partNumber, { cycleGroupId: event.target.value })
-              }
-            />
-            {normalizeGroup(edit.cycleGroupId) && <Badge tone="orange">Kiri/kanan</Badge>}
-          </label>
         )
       },
     },
@@ -237,7 +227,7 @@ export function CycleTimePage() {
       <PageHeader
         eyebrow="Master Data · Robot G & H"
         title="Cycle Time & Capacity"
-        subtitle="Cycle time disimpan per part di database dan dipakai Admin untuk memperkirakan beban kerja sebelum membagi permintaan hasil scan ke shift produksi."
+        subtitle="Target item per jam dihitung dari cycle time dengan efisiensi 85%: 3600 ÷ cycle time (detik) × 0,85."
         meta={
           <span className="page-meta__item">
             <Clock3 size={12} /> {parts.length} PN Assy/Sub Assy
@@ -265,11 +255,8 @@ export function CycleTimePage() {
         <Callout tone="info">Memuat data cycle time dari server…</Callout>
       )}
 
-      <Callout tone="info" title="Cycle time per pcs dan kelompok mesin">
-        Isi waktu aktual dalam detik untuk menghasilkan satu pcs. Estimasi beban adalah jumlah pcs ×
-        detik/pcs; tidak ada asumsi 45 menit per pallet. Untuk item yang berbagi mesin dengan urutan
-        bergantian kiri/kanan, masukkan ID kelompok yang sama. Cycle time masing-masing tetap
-        dihitung per pcs dan beban keduanya dijumlahkan pada sumber daya yang sama.
+      <Callout tone="info" title="Perhitungan target per jam">
+        Isi cycle time dalam detik per item. Target item per jam = 3600 ÷ cycle time × 0,85.
       </Callout>
 
       <div className="kpi-grid">
@@ -290,12 +277,12 @@ export function CycleTimePage() {
           note="Siap dihitung beban kerjanya"
         />
         <StatCard
-          label="Item dalam kelompok mesin"
-          value={String(groupedPartCount)}
-          suffix="PN"
+          label="Line terdaftar"
+          value={String(lines.length)}
+          suffix="line"
           icon={Clock3}
           tone="orange"
-          note="Berbagi sumber daya/urutan"
+          note="Filter berdasarkan line"
         />
         <StatCard
           label="Belum diatur"
@@ -309,6 +296,39 @@ export function CycleTimePage() {
 
       <section className="card">
         <div className="table-toolbar">
+          <div className="toolbar-group">
+            <select
+              className="select"
+              style={{ width: 150, height: 38, minHeight: 38 }}
+              value={lineFilter}
+              onChange={(event) => setLineFilter(event.target.value)}
+              aria-label="Filter line"
+            >
+              <option value="all">Semua line</option>
+              {lines.map((line) => <option key={line} value={line}>{line}</option>)}
+            </select>
+            <select
+              className="select"
+              style={{ width: 150, height: 38, minHeight: 38 }}
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+              aria-label="Filter tipe part"
+            >
+              <option value="all">Semua tipe</option>
+              <option value="Assy">Assy</option>
+              <option value="Sub_Assy">Sub Assy</option>
+            </select>
+            <select
+              className="select"
+              style={{ width: 150, height: 38, minHeight: 38 }}
+              value={modelFilter}
+              onChange={(event) => setModelFilter(event.target.value)}
+              aria-label="Filter project atau model"
+            >
+              <option value="all">Semua project / model</option>
+              {models.map((model) => <option key={model} value={model}>{model}</option>)}
+            </select>
+          </div>
           <SearchInput
             value={search}
             onChange={setSearch}

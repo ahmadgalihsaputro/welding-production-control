@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { authenticate, type AuthenticatedRequest } from '../middleware/auth.js'
 import { prisma } from '../lib/prisma.js'
 import { env } from '../config/env.js'
+import { currentUserShift } from '../lib/userShift.js'
 
 const router = Router()
 
@@ -15,6 +16,7 @@ const loginSchema = z.object({
 
 const userWithAreas = {
   workAreas: { include: { workArea: true } },
+  partSkills: { include: { part: true } },
 } as const
 
 function toPublicUser(user: {
@@ -29,8 +31,37 @@ function toPublicUser(user: {
   line: string
   initials: string
   status: string
+  shiftMode: string
+  shiftBase: number
+  shiftAnchorDate: Date | null
   workAreas: Array<{ workArea: { id: string; label: string; line: string; type: string; process: string } }>
+  partSkills: Array<{ part: { partNumber: string; line: string; type: string; process: string } }>
 }) {
+  const skills = user.partSkills
+    .map((skill) => skill.part)
+    .filter((part) => part.type === 'Assy' || part.type === 'Sub_Assy')
+  const groupedAreas = new Map<string, {
+    id: string
+    label: string
+    line: string
+    type: string
+    process: string
+    partNumbers: string[]
+  }>()
+  for (const part of skills) {
+    const key = `${part.line}:${part.type}`
+    const area = groupedAreas.get(key) ?? {
+      id: key,
+      label: `${part.line} · ${part.type === 'Sub_Assy' ? 'Sub Assy' : 'Assy'}`,
+      line: part.line,
+      type: part.type,
+      process: '',
+      partNumbers: [],
+    }
+    area.partNumbers.push(part.partNumber)
+    groupedAreas.set(key, area)
+  }
+
   return {
     id: user.id,
     employeeId: user.employeeId,
@@ -43,7 +74,17 @@ function toPublicUser(user: {
     line: user.line,
     initials: user.initials,
     status: user.status,
-    workAreas: user.workAreas.map((assignment) => assignment.workArea),
+    shiftMode: user.shiftMode,
+    shiftBase: user.shiftBase,
+    shiftAnchorDate: user.shiftAnchorDate?.toISOString().slice(0, 10) ?? null,
+    currentShift: currentUserShift(user),
+    workAreas: groupedAreas.size > 0
+      ? Array.from(groupedAreas.values())
+      : user.workAreas.map((assignment) => ({
+          ...assignment.workArea,
+          partNumbers: [] as string[],
+        })),
+    partSkills: skills,
   }
 }
 

@@ -1,4 +1,4 @@
-import { Boxes, Layers3, PackageSearch, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Boxes, Layers3, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -7,7 +7,7 @@ import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
-import { StatCard } from '../../components/ui/StatCard'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { describeApiError } from '../../lib/api'
 import {
   addBomComponent,
@@ -29,17 +29,25 @@ interface EditingQty {
 }
 
 function sourceLabel(row: BomComponentRecord): string {
-  if (row.source === 'production') {
-    return row.type === 'Sub_Assy' ? 'Sub Assy' : 'Part produksi'
+  if (row.source === 'production') return row.type?.replace('_', ' ') ?? 'Komponen'
+  if (row.category === 'Bolt' || row.category === 'Nut' || row.category === 'Bolt/Nut') {
+    return 'Bolt & Nut'
   }
-  return row.category ?? 'Stock item'
+  return row.category ?? 'Komponen'
 }
 
 function sourceTone(row: BomComponentRecord): Tone {
-  if (row.source === 'production') return 'sky'
+  if (row.source === 'production') {
+    if (row.type === 'Sub_Assy') return 'sky'
+    if (row.type === 'Press_Part') return 'orange'
+    if (row.type === 'Child_Part') return 'success'
+    if (row.type === 'Bolt' || row.type === 'Nut') return 'warning'
+  }
   switch (row.category) {
     case 'Press Part':
       return 'orange'
+    case 'Bolt':
+    case 'Nut':
     case 'Bolt/Nut':
       return 'warning'
     case 'Child Part':
@@ -49,7 +57,12 @@ function sourceTone(row: BomComponentRecord): Tone {
   }
 }
 
+function groupLabel(row: BomComponentRecord): string {
+  return sourceLabel(row)
+}
+
 export function BomPage() {
+  const { confirm } = useConfirmation()
   const [parts, setParts] = useState<ProductionPartRecord[]>([])
   const [stockItems, setStockItems] = useState<StockPolicyRecord[]>([])
   const [bomRows, setBomRows] = useState<BomComponentRecord[]>([])
@@ -60,6 +73,7 @@ export function BomPage() {
   const [notice, setNotice] = useState('')
   const [parentPartNumber, setParentPartNumber] = useState('')
   const [componentPartNumber, setComponentPartNumber] = useState('')
+  const [componentSearch, setComponentSearch] = useState('')
   const [quantityPerAssy, setQuantityPerAssy] = useState('')
   const [assyPlanQty, setAssyPlanQty] = useState('1')
   const [editing, setEditing] = useState<EditingQty | null>(null)
@@ -89,11 +103,11 @@ export function BomPage() {
   }, [loadData])
 
   const assyParts = useMemo(
-    () => parts.filter((part) => part.type === 'Assy'),
+    () => parts.filter((part) => part.type === 'Assy').sort((a, b) => a.partNumber.localeCompare(b.partNumber)),
     [parts],
   )
   const subAssyParts = useMemo(
-    () => parts.filter((part) => part.type === 'Sub_Assy'),
+    () => parts.filter((part) => part.type !== 'Assy'),
     [parts],
   )
   const productionPartNumbers = useMemo(
@@ -104,35 +118,33 @@ export function BomPage() {
     () => stockItems.filter((item) => !productionPartNumbers.has(item.partNumber)),
     [stockItems, productionPartNumbers],
   )
-
   const componentOptions = useMemo(
     () =>
       [
         ...subAssyParts.map((part) => ({
           value: part.partNumber,
-          label: `${part.partNumber} · Sub Assy · ${part.line} · ${part.process}`,
+          label: `${part.partNumber} · ${part.type.replace('_', ' ')}`,
           disabled: part.status === 'inactive',
         })),
         ...stockOnlyItems.map((item) => ({
           value: item.partNumber,
-          label: `${item.partNumber} · ${item.category} · ${item.description}`,
+          label: `${item.partNumber} · ${item.category}`,
           disabled: false,
         })),
       ].sort((left, right) => left.value.localeCompare(right.value)),
     [subAssyParts, stockOnlyItems],
   )
+  const filteredComponentOptions = useMemo(() => {
+    const needle = componentSearch.trim().toLowerCase()
+    if (!needle) return componentOptions
+    return componentOptions.filter((option) => option.label.toLowerCase().includes(needle))
+  }, [componentOptions, componentSearch])
 
   useEffect(() => {
-    if (assyParts.length === 0) {
+    if (parentPartNumber && !assyParts.some((part) => part.partNumber === parentPartNumber)) {
       setParentPartNumber('')
-      return
     }
-    setParentPartNumber((current) =>
-      assyParts.some((part) => part.partNumber === current)
-        ? current
-        : (assyParts.find((part) => part.status === 'active') ?? assyParts[0]).partNumber,
-    )
-  }, [assyParts])
+  }, [assyParts, parentPartNumber])
 
   useEffect(() => {
     if (componentOptions.length === 0) {
@@ -140,11 +152,12 @@ export function BomPage() {
       return
     }
     setComponentPartNumber((current) =>
-      componentOptions.some((option) => option.value === current)
-        ? current
-        : (componentOptions.find((option) => !option.disabled) ?? componentOptions[0]).value,
+      componentOptions.some((option) => option.value === current) ? current : '',
     )
   }, [componentOptions])
+  const selectedComponentOption = componentOptions.find((option) => option.value === componentPartNumber)
+  const showComponentOptions = componentSearch.trim().length > 0 &&
+    (!selectedComponentOption || componentSearch.trim() !== selectedComponentOption.label)
 
   const components = useMemo(
     () =>
@@ -153,7 +166,6 @@ export function BomPage() {
         .sort((left, right) => left.componentPartNumber.localeCompare(right.componentPartNumber)),
     [bomRows, parentPartNumber],
   )
-
   const visibleComponents = useMemo(() => {
     const needle = search.trim().toLowerCase()
     if (!needle) return components
@@ -164,20 +176,41 @@ export function BomPage() {
         (row.category ?? '').toLowerCase().includes(needle),
     )
   }, [components, search])
+  const compositionGroups = useMemo(() => {
+    const grouped = new Map<string, BomComponentRecord[]>()
+    visibleComponents.forEach((row) => {
+      const group = groupLabel(row)
+      grouped.set(group, [...(grouped.get(group) ?? []), row])
+    })
+    const preferredOrder = ['Sub Assy', 'Press Part', 'Child Part', 'Bolt & Nut']
+    return [...grouped.entries()].sort(([left], [right]) => {
+      const leftIndex = preferredOrder.indexOf(left)
+      const rightIndex = preferredOrder.indexOf(right)
+      if (leftIndex < 0 && rightIndex < 0) return left.localeCompare(right)
+      if (leftIndex < 0) return 1
+      if (rightIndex < 0) return -1
+      return leftIndex - rightIndex
+    })
+  }, [visibleComponents])
 
   const planQty = Math.max(0, Number(assyPlanQty) || 0)
   const configuredParentCount = new Set(bomRows.map((row) => row.parentPartNumber)).size
-  const productionComponentCount = bomRows.filter((row) => row.source === 'production').length
-  const stockComponentCount = bomRows.filter((row) => row.source === 'stock').length
+  const selectedParent = assyParts.find((part) => part.partNumber === parentPartNumber)
+  const refreshBom = async () => setBomRows(await listBom())
 
-  const refreshBom = async () => {
-    setBomRows(await listBom())
+  const selectParent = (partNumber: string) => {
+    setParentPartNumber(partNumber)
+    setEditing(null)
+    setSearch('')
+    setComponentSearch('')
+    setError('')
+    setNotice('')
   }
 
   const addOrUpdateComponent = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!parentPartNumber) {
-      setError('Pilih parent Assy terlebih dahulu.')
+      setError('Pilih part Assy untuk melihat atau mengubah komposisinya.')
       return
     }
     if (!componentPartNumber) {
@@ -190,9 +223,14 @@ export function BomPage() {
       return
     }
 
-    const existing = components.find(
-      (row) => row.componentPartNumber === componentPartNumber,
-    )
+    const existing = components.find((row) => row.componentPartNumber === componentPartNumber)
+    const confirmed = await confirm({
+      title: existing ? 'Konfirmasi perubahan BOM' : 'Konfirmasi tambah komponen',
+      message: `${existing ? 'Perbarui' : 'Tambahkan'} ${componentPartNumber} sebanyak ${qty} pcs untuk 1 Assy ${parentPartNumber}?`,
+      confirmLabel: existing ? 'Simpan perubahan' : 'Tambah komponen',
+    })
+    if (!confirmed) return
+
     setSaving(true)
     setError('')
     setNotice('')
@@ -201,10 +239,7 @@ export function BomPage() {
         await updateBomComponent(parentPartNumber, componentPartNumber, qty)
         setNotice(`Qty ${componentPartNumber} diperbarui menjadi ${qty} pcs per 1 Assy.`)
       } else {
-        await addBomComponent(parentPartNumber, {
-          partNumber: componentPartNumber,
-          quantityPerAssy: qty,
-        })
+        await addBomComponent(parentPartNumber, { partNumber: componentPartNumber, quantityPerAssy: qty })
         setNotice(`${componentPartNumber} ditambahkan ke BOM ${parentPartNumber}.`)
       }
       setQuantityPerAssy('')
@@ -222,6 +257,13 @@ export function BomPage() {
       setError('Qty per 1 Assy harus bilangan bulat minimal 1.')
       return
     }
+    const confirmed = await confirm({
+      title: 'Konfirmasi perubahan qty',
+      message: `Ubah kebutuhan ${row.componentPartNumber} menjadi ${qty} pcs per 1 Assy ${row.parentPartNumber}?`,
+      confirmLabel: 'Simpan perubahan',
+    })
+    if (!confirmed) return
+
     setBusyKey(row.componentPartNumber)
     setError('')
     setNotice('')
@@ -238,13 +280,13 @@ export function BomPage() {
   }
 
   const removeComponent = async (row: BomComponentRecord) => {
-    if (
-      !window.confirm(
-        `Hapus ${row.componentPartNumber} dari BOM ${row.parentPartNumber}? Master part/stock tidak ikut terhapus.`,
-      )
-    ) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Konfirmasi hapus komponen',
+      message: `Hapus ${row.componentPartNumber} dari BOM ${row.parentPartNumber}?`,
+      confirmLabel: 'Hapus komponen',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setBusyKey(row.componentPartNumber)
     setError('')
     setNotice('')
@@ -260,28 +302,51 @@ export function BomPage() {
     }
   }
 
-  const columns: Column<BomComponentRecord>[] = [
+  const parentColumns: Column<ProductionPartRecord>[] = [
+    {
+      key: 'part',
+      header: 'Part Assy',
+      render: (part) => (
+        <div className="cell-stack">
+          <span className="cell-main mono">{part.partNumber}</span>
+          <span className="cell-sub">{part.models.join(', ') || 'Model belum diatur'}</span>
+        </div>
+      ),
+    },
+    { key: 'line', header: 'Line', render: (part) => <Badge tone="neutral">{part.line}</Badge> },
+    {
+      key: 'components',
+      header: 'Komposisi',
+      render: (part) => {
+        const count = bomRows.filter((row) => row.parentPartNumber === part.partNumber).length
+        return <Badge tone={count ? 'success' : 'warning'}>{count ? `${count} komponen` : 'Belum diatur'}</Badge>
+      },
+    },
+    {
+      key: 'action',
+      header: '',
+      align: 'right',
+      render: (part) => (
+        <Button size="sm" variant={parentPartNumber === part.partNumber ? 'primary' : 'secondary'} onClick={() => selectParent(part.partNumber)}>
+          {parentPartNumber === part.partNumber ? 'Dipilih' : 'Lihat komposisi'}
+        </Button>
+      ),
+    },
+  ]
+
+  const componentColumns: Column<BomComponentRecord>[] = [
     {
       key: 'component',
-      header: 'Komponen',
+      header: 'Part komponen',
       render: (row) => (
         <div className="cell-stack">
           <span className="cell-main mono">{row.componentPartNumber}</span>
-          <span className="cell-sub">
-            {row.source === 'production'
-              ? `${row.line ?? '—'} · ${row.process ?? '—'}`
-              : (row.description ?? '—')}
-          </span>
+          <span className="cell-sub">{row.description ?? row.process ?? '—'}</span>
         </div>
       ),
     },
     {
-      key: 'source',
-      header: 'Sumber',
-      render: (row) => <Badge tone={sourceTone(row)}>{sourceLabel(row)}</Badge>,
-    },
-    {
-      key: 'qty',
+      key: 'quantity',
       header: 'Qty / 1 Assy',
       align: 'right',
       render: (row) =>
@@ -294,312 +359,172 @@ export function BomPage() {
               min="1"
               step="1"
               value={editing.value}
-              onChange={(event) =>
-                setEditing((current) =>
-                  current ? { ...current, value: event.target.value } : current,
-                )
-              }
+              onChange={(event) => setEditing((current) => current ? { ...current, value: event.target.value } : current)}
               aria-label={`Qty ${row.componentPartNumber}`}
             />
-            <Button
-              size="sm"
-              variant="primary"
-              loading={busyKey === row.componentPartNumber}
-              onClick={() => void saveQuantity(row)}
-            >
-              Simpan
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
-              Batal
-            </Button>
+            <Button size="sm" variant="primary" loading={busyKey === row.componentPartNumber} onClick={() => void saveQuantity(row)}>Simpan</Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Batal</Button>
           </div>
-        ) : (
-          <span className="mono strong">{formatNumber(row.quantityPerAssy)} pcs</span>
-        ),
+        ) : <span className="mono strong">{formatNumber(row.quantityPerAssy)} pcs</span>,
     },
     {
-      key: 'required',
+      key: 'planned',
       header: `Kebutuhan ${formatNumber(planQty)} Assy`,
       align: 'right',
-      render: (row) => (
-        <span className="mono">{formatNumber(row.quantityPerAssy * planQty)} pcs</span>
-      ),
+      render: (row) => <span className="mono">{formatNumber(row.quantityPerAssy * planQty)} pcs</span>,
     },
     {
-      key: 'action',
+      key: 'actions',
       header: '',
       align: 'right',
       render: (row) => (
         <div className="table-actions">
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busyKey === row.componentPartNumber}
-            onClick={() =>
-              setEditing({
-                componentPartNumber: row.componentPartNumber,
-                value: String(row.quantityPerAssy),
-              })
-            }
-          >
-            Ubah qty
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busyKey === row.componentPartNumber}
-            onClick={() => void removeComponent(row)}
-          >
-            <Trash2 size={14} />
-          </Button>
+          <Button size="sm" variant="ghost" disabled={busyKey === row.componentPartNumber} onClick={() => setEditing({ componentPartNumber: row.componentPartNumber, value: String(row.quantityPerAssy) })}>Ubah qty</Button>
+          <Button size="sm" variant="ghost" disabled={busyKey === row.componentPartNumber} onClick={() => void removeComponent(row)}><Trash2 size={14} /></Button>
         </div>
       ),
     },
   ]
 
-  const selectedParent = assyParts.find((part) => part.partNumber === parentPartNumber)
-
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Master Data · Robot G & H"
-        title="Bill of Material Assy → Sub Assy & Komponen"
-        subtitle="Satu relasi menyatakan qty komponen yang dibutuhkan untuk membuat satu Assy. Komponen boleh berupa Part Number produksi (Sub Assy) atau Stock Item (Press Part, Bolt/Nut, Child Part)."
+        eyebrow="Master Data"
+        title="BOM"
+        subtitle="Pilih part Assy untuk melihat komposisi Sub Assy, Press Part, Child Part, dan Bolt & Nut yang digunakan."
         meta={
           <>
-            <span className="page-meta__item">
-              <Boxes size={12} /> {formatNumber(bomRows.length)} relasi BOM
-            </span>
-            <span className="page-meta__item">
-              <Layers3 size={12} /> {configuredParentCount} Assy terkonfigurasi
-            </span>
+            <span className="page-meta__item"><Boxes size={12} /> {assyParts.length} part Assy</span>
+            <span className="page-meta__item"><Layers3 size={12} /> {formatNumber(bomRows.length)} komponen</span>
           </>
         }
-        actions={
-          <Button
-            variant="secondary"
-            leftIcon={<RefreshCw size={15} />}
-            loading={loading}
-            onClick={() => void loadData()}
-          >
-            Muat ulang
-          </Button>
-        }
+        actions={<Button variant="secondary" leftIcon={<RefreshCw size={15} />} loading={loading} onClick={() => void loadData()}>Muat ulang</Button>}
       />
 
-      {error && (
-        <Callout tone="danger" title="Aksi gagal">
-          {error}
-        </Callout>
-      )}
+      {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
       {notice && <Callout tone="success">{notice}</Callout>}
-      {loading && bomRows.length === 0 && (
-        <Callout tone="info">Memuat BOM dari server…</Callout>
-      )}
-
-      <Callout tone="warning" title="Data aktual, bukan angka contoh">
-        BOM disimpan per baris ke database. Tanpa BOM yang tersimpan, alokasi Assy ditahan agar
-        kebutuhan Sub Assy tidak terlewat.
-      </Callout>
-
-      <div className="kpi-grid">
-        <StatCard
-          label="Assy dengan BOM"
-          value={String(configuredParentCount)}
-          suffix="PN"
-          icon={Boxes}
-          tone="orange"
-          note={`Dari ${assyParts.length} PN Assy`}
-        />
-        <StatCard
-          label="Relasi BOM"
-          value={formatNumber(bomRows.length)}
-          suffix="baris"
-          icon={Layers3}
-          tone="sky"
-          note="Qty per 1 Assy"
-        />
-        <StatCard
-          label="Komponen Sub Assy"
-          value={formatNumber(productionComponentCount)}
-          suffix="baris"
-          icon={PackageSearch}
-          tone="green"
-          note="Part produksi"
-        />
-        <StatCard
-          label="Komponen stock"
-          value={formatNumber(stockComponentCount)}
-          suffix="baris"
-          icon={PackageSearch}
-          tone="amber"
-          note="Press part, bolt/nut, child part"
-        />
-      </div>
+      {loading && parts.length === 0 && <Callout tone="info">Memuat daftar BOM…</Callout>}
 
       <section className="card">
         <div className="section-head">
           <div>
-            <h2 className="section-title">Master kebutuhan komponen</h2>
-            <p className="section-sub">
-              Pilih parent Assy, lalu tambahkan komponen dan qty per satu Assy.
-            </p>
+            <h2 className="section-title">Daftar part Assy</h2>
+            <p className="section-sub">Klik salah satu part Assy untuk membuka komposisinya.</p>
           </div>
-          <Badge tone={components.length > 0 ? 'success' : 'warning'}>
-            {components.length > 0
-              ? `${components.length} komponen aktif`
-              : 'BOM belum diatur'}
-          </Badge>
+          <Badge tone="neutral">{configuredParentCount} dari {assyParts.length} sudah memiliki BOM</Badge>
         </div>
-
-        <div className="form-grid">
-          <Field label="Parent Assy" htmlFor="bom-parent">
-            <select
-              id="bom-parent"
-              className="select"
-              value={parentPartNumber}
-              onChange={(event) => {
-                setParentPartNumber(event.target.value)
-                setEditing(null)
-              }}
-              disabled={assyParts.length === 0}
-            >
-              {assyParts.length === 0 && <option value="">Belum ada PN Assy</option>}
-              {assyParts.map((part) => (
-                <option key={part.partNumber} value={part.partNumber}>
-                  {part.partNumber} · {part.line} · {part.process}
-                  {part.status === 'inactive' ? ' · INACTIVE' : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            label="Qty Assy yang direncanakan"
-            htmlFor="assy-plan-qty"
-            hint="Dipakai untuk menghitung kolom kebutuhan."
-          >
-            <input
-              id="assy-plan-qty"
-              className="input"
-              type="number"
-              min="0"
-              step="1"
-              value={assyPlanQty}
-              onChange={(event) => setAssyPlanQty(event.target.value)}
-            />
-          </Field>
-        </div>
-
-        {selectedParent?.status === 'inactive' && (
-          <Callout tone="warning" style={{ marginTop: 12 }}>
-            Parent {selectedParent.partNumber} sedang inactive. BOM tetap dapat dilihat, tetapi
-            pastikan part diaktifkan sebelum dipakai produksi.
-          </Callout>
-        )}
-
-        {assyParts.length === 0 && (
-          <Callout tone="warning" style={{ marginTop: 12 }}>
-            Belum ada Part Number bertipe Assy. Daftarkan dulu di Master Data → Part Number.
-          </Callout>
-        )}
-
-        <form className="form-grid" onSubmit={(event) => void addOrUpdateComponent(event)} style={{ marginTop: 16 }}>
-          <Field
-            label="Komponen"
-            htmlFor="bom-component"
-            hint="Sub Assy atau Stock Item yang belum terdaftar sebagai part produksi."
-          >
-            <select
-              id="bom-component"
-              className="select"
-              value={componentPartNumber}
-              onChange={(event) => setComponentPartNumber(event.target.value)}
-              disabled={componentOptions.length === 0}
-            >
-              {componentOptions.length === 0 && <option value="">Belum ada komponen</option>}
-              {componentOptions.map((option) => (
-                <option key={option.value} value={option.value} disabled={option.disabled}>
-                  {option.label}
-                  {option.disabled ? ' (inactive)' : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            label="Qty untuk 1 Assy"
-            htmlFor="bom-quantity"
-            hint="Bilangan bulat minimal 1."
-          >
-            <input
-              id="bom-quantity"
-              className="input"
-              type="number"
-              min="1"
-              step="1"
-              value={quantityPerAssy}
-              placeholder="Isi qty aktual"
-              onChange={(event) => setQuantityPerAssy(event.target.value)}
-              required
-            />
-          </Field>
-          <div className="form-actions">
-            <Button
-              type="submit"
-              variant="primary"
-              leftIcon={<Plus size={15} />}
-              loading={saving}
-              disabled={!parentPartNumber || componentOptions.length === 0}
-            >
-              Tambah / perbarui komponen
-            </Button>
-          </div>
-        </form>
-
-        <Callout tone="info" style={{ marginTop: 12 }}>
-          Jika komponen sudah ada di BOM parent ini, menyimpan akan memperbarui qty-nya. Semua
-          perubahan langsung tersimpan ke database.
-        </Callout>
-
-        <div className="table-toolbar" style={{ marginTop: 18 }}>
-          <div className="toolbar-group">
-            <Badge tone="neutral">{components.length} baris</Badge>
-          </div>
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Cari komponen, kategori, deskripsi…"
-            className="search-inline"
-          />
-        </div>
-
-        {visibleComponents.length > 0 ? (
-          <DataTable
-            columns={columns}
-            rows={visibleComponents}
-            rowKey={(row) => row.componentPartNumber}
-            minWidth={880}
-            footer={
-              <span className="muted small">
-                Menampilkan {visibleComponents.length} dari {components.length} komponen
-              </span>
-            }
-          />
-        ) : (
-          <div className="empty-state">
-            <div className="empty-state__icon">
-              <Boxes size={22} />
-            </div>
-            <strong>
-              {components.length === 0
-                ? `Belum ada data BOM untuk ${parentPartNumber || 'PN ini'}`
-                : 'Tidak ada komponen yang cocok dengan pencarian'}
-            </strong>
-            <p>
-              Tambahkan baris komponen berdasarkan BOM aktual; jumlah tidak diisi otomatis.
-            </p>
-          </div>
-        )}
+        <DataTable
+          columns={parentColumns}
+          rows={assyParts}
+          rowKey={(part) => part.partNumber}
+          minWidth={720}
+          emptyMessage="Belum ada part bertipe Assy."
+        />
       </section>
+
+      {selectedParent ? (
+        <section className="card">
+          <div className="section-head">
+            <div>
+              <h2 className="section-title">Komposisi {selectedParent.partNumber}</h2>
+              <p className="section-sub">{selectedParent.line} · {selectedParent.models.join(', ') || 'Model belum diatur'}</p>
+            </div>
+            <Badge tone={components.length ? 'success' : 'warning'}>{components.length} komponen</Badge>
+          </div>
+
+          {selectedParent.status === 'inactive' && <Callout tone="warning">Part Assy ini sedang nonaktif.</Callout>}
+
+          <div className="form-grid">
+            <Field label="Qty Assy yang direncanakan" htmlFor="assy-plan-qty" hint="Dipakai untuk menghitung total kebutuhan komponen.">
+              <input id="assy-plan-qty" className="input" type="number" min="0" step="1" value={assyPlanQty} onChange={(event) => setAssyPlanQty(event.target.value)} />
+            </Field>
+          </div>
+
+          <form className="form-grid bom-add-form" onSubmit={(event) => void addOrUpdateComponent(event)}>
+            <Field label="Part komponen" htmlFor="bom-component-search" hint="Cari PN atau jenis, lalu pilih hasilnya.">
+              <SearchInput
+                id="bom-component-search"
+                value={componentSearch}
+                onChange={(value) => {
+                  setComponentSearch(value)
+                  setComponentPartNumber('')
+                }}
+                placeholder="Cari PN, Sub Assy, Press Part, Bolt, Nut…"
+                className="search-inline"
+              />
+              {showComponentOptions && (
+                <div className="bom-component-search__results">
+                  {filteredComponentOptions.slice(0, 8).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className="bom-component-search__option"
+                      disabled={option.disabled}
+                      onClick={() => {
+                        setComponentPartNumber(option.value)
+                        setComponentSearch(option.label)
+                      }}
+                    >
+                      <span className="mono">{option.value}</span>
+                      <span>{option.label.split(' · ')[1]}{option.disabled ? ' · inactive' : ''}</span>
+                    </button>
+                  ))}
+                  {filteredComponentOptions.length === 0 && (
+                    <span className="bom-component-search__empty">Tidak ada part yang cocok.</span>
+                  )}
+                  {filteredComponentOptions.length > 8 && (
+                    <span className="bom-component-search__empty">
+                      Tulis pencarian lebih spesifik untuk melihat {filteredComponentOptions.length - 8} hasil lainnya.
+                    </span>
+                  )}
+                </div>
+              )}
+              {selectedComponentOption && (
+                <div className="bom-component-search__selected">
+                  <Badge tone="sky">{selectedComponentOption.label}</Badge>
+                </div>
+              )}
+            </Field>
+            <Field label="Qty untuk 1 Assy" htmlFor="bom-quantity" hint="Bilangan bulat minimal 1.">
+              <input id="bom-quantity" className="input" type="number" min="1" step="1" value={quantityPerAssy} placeholder="Isi qty aktual" onChange={(event) => setQuantityPerAssy(event.target.value)} required />
+            </Field>
+            <div className="form-actions bom-add-form__actions">
+              <Button type="submit" variant="primary" leftIcon={<Plus size={15} />} loading={saving} disabled={componentOptions.length === 0}>Tambah / perbarui komponen</Button>
+            </div>
+          </form>
+
+          <div className="table-toolbar" style={{ marginTop: 18 }}>
+            <div className="toolbar-group"><Badge tone="neutral">{components.length} komponen</Badge></div>
+            <SearchInput value={search} onChange={setSearch} placeholder="Cari part atau kategori…" className="search-inline" />
+          </div>
+
+          {compositionGroups.length > 0 ? (
+            <div style={{ display: 'grid', gap: 16 }}>
+              {compositionGroups.map(([group, rows]) => (
+                <section key={group}>
+                  <div className="section-head" style={{ marginBottom: 8 }}>
+                    <h3 className="section-title">{group}</h3>
+                    <Badge tone={sourceTone(rows[0])}>{rows.length} part</Badge>
+                  </div>
+                  <DataTable columns={componentColumns} rows={rows} rowKey={(row) => row.componentPartNumber} minWidth={780} />
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-state__icon"><Boxes size={22} /></div>
+              <strong>{components.length === 0 ? 'Belum ada komposisi untuk part Assy ini' : 'Tidak ada komponen yang cocok dengan pencarian'}</strong>
+              <p>Hanya komponen yang benar-benar digunakan perlu ditambahkan ke BOM.</p>
+            </div>
+          )}
+        </section>
+      ) : (
+        <div className="empty-state">
+          <div className="empty-state__icon"><Boxes size={22} /></div>
+          <strong>Pilih part Assy</strong>
+          <p>Komposisi BOM akan tampil setelah Anda memilih part Assy di daftar.</p>
+        </div>
+      )}
     </div>
   )
 }

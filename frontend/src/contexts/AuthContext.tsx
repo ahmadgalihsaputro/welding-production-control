@@ -27,6 +27,7 @@ interface ApiWorkArea {
   line: string
   type: 'Assy' | 'Sub_Assy'
   process: string
+  partNumbers: string[]
 }
 
 interface ApiUser {
@@ -41,6 +42,10 @@ interface ApiUser {
   line: string
   initials: string
   status: string
+  shiftMode: 'rotating' | 'non_shift'
+  shiftBase: 1 | 2
+  shiftAnchorDate: string | null
+  currentShift: 1 | 2 | null
   workAreas: ApiWorkArea[]
 }
 
@@ -78,9 +83,10 @@ function mapWorkArea(area: ApiWorkArea): ProductionWorkArea {
   return {
     id: area.id,
     label: area.label,
-    line: area.line === 'Robot H' ? 'Robot H' : 'Robot G',
+    line: area.line,
     type: area.type === 'Sub_Assy' ? 'Sub Assy' : 'Assy',
     process: area.process,
+    partNumbers: area.partNumbers ?? [],
   }
 }
 
@@ -96,7 +102,29 @@ function allowedWorkAreas(apiUser: ApiUser): ProductionWorkArea[] {
 }
 
 function lineOf(value: string | undefined): RobotLine {
-  return value?.includes('Robot H') ? 'Robot H' : 'Robot G'
+  return value || 'Robot G'
+}
+
+function calculatedShift(apiUser: ApiUser, now = new Date()): 1 | 2 | null {
+  if (apiUser.shiftMode !== 'rotating' || !apiUser.shiftAnchorDate) return null
+  const dateParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const dateValues = Object.fromEntries(dateParts.map((part) => [part.type, part.value]))
+  const date = new Date(`${dateValues.year}-${dateValues.month}-${dateValues.day}T00:00:00.000Z`)
+  const anchor = new Date(`${apiUser.shiftAnchorDate}T00:00:00.000Z`)
+  const weekStart = (value: Date) => {
+    const result = new Date(value)
+    result.setUTCDate(result.getUTCDate() - ((result.getUTCDay() + 6) % 7))
+    return result
+  }
+  const weeks = Math.floor(
+    (weekStart(date).getTime() - weekStart(anchor).getTime()) / 604_800_000,
+  )
+  return (((apiUser.shiftBase - 1 + ((weeks % 2) + 2) % 2) % 2) + 1) as 1 | 2
 }
 
 function toSessionUser(apiUser: ApiUser, workArea?: ProductionWorkArea): SessionUser {
@@ -114,6 +142,10 @@ function toSessionUser(apiUser: ApiUser, workArea?: ProductionWorkArea): Session
     line: workArea?.label ?? apiUser.line,
     productionLine: workArea?.line ?? lineOf(apiUser.line),
     productionWorkAreaId: workArea?.id,
+    currentShift: calculatedShift(apiUser),
+    shiftMode: apiUser.shiftMode,
+    shiftBase: apiUser.shiftBase,
+    shiftAnchorDate: apiUser.shiftAnchorDate,
     email: apiUser.email ?? '',
     initials: apiUser.initials,
   }
@@ -212,6 +244,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setSession((current) => {
+        if (!current) return current
+        const currentShift = calculatedShift(current.apiUser)
+        if (current.user.currentShift === currentShift) return current
+        return {
+          ...current,
+          user: { ...current.user, currentShift },
+        }
+      })
+    }, 60_000)
+    return () => window.clearInterval(timer)
   }, [])
 
   const login = useCallback(async (identifier: string, password: string): Promise<LoginResult> => {

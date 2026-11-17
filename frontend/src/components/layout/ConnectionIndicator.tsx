@@ -84,18 +84,24 @@ export function ConnectionIndicator({ className }: ConnectionIndicatorProps = {}
     return null
   }
 
-  const tone: 'success' | 'error' = isConnected ? 'success' : 'error'
   const label = isConnected ? 'Backend Terhubung' : 'Backend Tidak Tersedia'
+  const classes = [
+    'connection-indicator',
+    className,
+    isConnected ? 'is-online' : 'is-offline',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div
-      className={`connection-indicator ${className} ${tone === 'success' ? 'is-online' : 'is-offline'}`}
+      className={classes}
       role="status"
       aria-live="polite"
       aria-label={label}
+      title={label}
     >
-      <span className="indicator-dot" />
-      <span className="indicator-label">{label}</span>
+      <span className="indicator-dot" aria-hidden="true" />
     </div>
   )
 }

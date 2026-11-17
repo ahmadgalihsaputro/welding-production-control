@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { describeApiError } from '../../lib/api'
 import {
   createPart,
@@ -52,7 +53,16 @@ function emptyForm(): PartFormState {
 }
 
 function typeLabel(type: PartType): string {
-  return type === 'Sub_Assy' ? 'Sub Assy' : 'Assy'
+  switch (type) {
+    case 'Sub_Assy': return 'Sub Assy'
+    case 'Press_Part': return 'Press Part'
+    case 'Child_Part': return 'Child Part'
+    default: return type
+  }
+}
+
+function isProductionType(type: PartType): boolean {
+  return type === 'Assy' || type === 'Sub_Assy'
 }
 
 function optionalInt(value: string): number | null {
@@ -62,6 +72,7 @@ function optionalInt(value: string): number | null {
 }
 
 export function PartsPage() {
+  const { confirm } = useConfirmation()
   const [parts, setParts] = useState<ProductionPartRecord[]>([])
   const [models, setModels] = useState<ProductionModelRecord[]>([])
   const [stockItems, setStockItems] = useState<StockPolicyRecord[]>([])
@@ -107,7 +118,11 @@ export function PartsPage() {
 
   const lineOptions = useMemo(
     () =>
-      Array.from(new Set(['Robot G', 'Robot H', ...parts.map((part) => part.line)])).sort(),
+      Array.from(new Set([
+        'Robot G',
+        'Robot H',
+        ...parts.filter((part) => isProductionType(part.type)).map((part) => part.line),
+      ])).sort(),
     [parts],
   )
 
@@ -174,15 +189,15 @@ export function PartsPage() {
       setError('Part number wajib diisi.')
       return
     }
-    if (!line) {
+    if (isProductionType(form.type) && !line) {
       setError('Line wajib diisi.')
       return
     }
-    if (!process) {
+    if (isProductionType(form.type) && !process) {
       setError('Process wajib diisi.')
       return
     }
-    if (form.models.length === 0) {
+    if (isProductionType(form.type) && form.models.length === 0) {
       setError('Pilih minimal satu model untuk part ini.')
       return
     }
@@ -201,15 +216,17 @@ export function PartsPage() {
     const currentPart = form.editingPartNumber
       ? parts.find((part) => part.partNumber === form.editingPartNumber)
       : undefined
-    if (
-      currentPart &&
-      (currentPart.line !== line || currentPart.process !== process) &&
-      !window.confirm(
-        `Ubah mapping ${partNumber} dari ${currentPart.line} · ${currentPart.process} ke ${line} · ${process}?\n\nPerubahan berlaku untuk transaksi baru. Request/antrean aktif harus diselesaikan lebih dahulu. Riwayat lama dan saldo stok tidak diubah.`,
-      )
-    ) {
-      return
-    }
+    const mappingChanged = Boolean(
+      currentPart && (currentPart.line !== line || currentPart.process !== process),
+    )
+    const confirmed = await confirm({
+      title: mappingChanged ? 'Konfirmasi perubahan line / proses' : form.editingPartNumber ? 'Konfirmasi perubahan part' : 'Konfirmasi part baru',
+      message: mappingChanged
+        ? `Ubah mapping ${partNumber} dari ${currentPart?.line} · ${currentPart?.process} ke ${line} · ${process}? Perubahan berlaku untuk transaksi baru; riwayat dan saldo stok tidak berubah.`
+        : `${form.editingPartNumber ? 'Simpan perubahan pada' : 'Tambahkan'} part ${partNumber}?`,
+      confirmLabel: form.editingPartNumber ? 'Simpan perubahan' : 'Tambah part',
+    })
+    if (!confirmed) return
 
     setSaving(true)
     setError('')
@@ -217,10 +234,10 @@ export function PartsPage() {
     try {
       if (form.editingPartNumber) {
         await updatePart(form.editingPartNumber, {
-          line,
+          line: isProductionType(form.type) ? line : 'Non Production',
           type: form.type,
-          process,
-          models: form.models,
+          process: isProductionType(form.type) ? process : form.type.replace('_', ' '),
+          models: isProductionType(form.type) ? form.models : [],
           packaging,
           maxStore,
           status: form.status,
@@ -229,10 +246,10 @@ export function PartsPage() {
       } else {
         await createPart({
           partNumber,
-          line,
+          line: isProductionType(form.type) ? line : 'Non Production',
           type: form.type,
-          process,
-          models: form.models,
+          process: isProductionType(form.type) ? process : form.type.replace('_', ' '),
+          models: isProductionType(form.type) ? form.models : [],
           packaging,
           maxStore,
           status: form.status,
@@ -251,12 +268,13 @@ export function PartsPage() {
 
   const toggleStatus = async (part: ProductionPartRecord) => {
     const nextStatus: MasterStatus = part.status === 'active' ? 'inactive' : 'active'
-    if (
-      nextStatus === 'inactive' &&
-      !window.confirm(`Nonaktifkan part ${part.partNumber}? Data transaksi lama tetap tersimpan.`)
-    ) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Konfirmasi status part',
+      message: `${nextStatus === 'active' ? 'Aktifkan' : 'Nonaktifkan'} part ${part.partNumber}? Data transaksi lama tetap tersimpan.`,
+      confirmLabel: nextStatus === 'active' ? 'Aktifkan' : 'Nonaktifkan',
+      tone: nextStatus === 'active' ? 'primary' : 'danger',
+    })
+    if (!confirmed) return
     setBusyPartNumber(part.partNumber)
     setError('')
     setNotice('')
@@ -274,13 +292,13 @@ export function PartsPage() {
   }
 
   const removePart = async (part: ProductionPartRecord) => {
-    if (
-      !window.confirm(
-        `Hapus part ${part.partNumber}? Part yang sudah memiliki transaksi produksi tidak dapat dihapus.`,
-      )
-    ) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Konfirmasi hapus part',
+      message: `Hapus part ${part.partNumber}? Part yang sudah memiliki transaksi produksi tidak dapat dihapus.`,
+      confirmLabel: 'Hapus part',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setBusyPartNumber(part.partNumber)
     setError('')
     setNotice('')
@@ -525,9 +543,13 @@ export function PartsPage() {
               >
                 <option value="Assy">Assy</option>
                 <option value="Sub_Assy">Sub Assy</option>
+                <option value="Press_Part">Press Part</option>
+                <option value="Child_Part">Child Part</option>
+                <option value="Bolt">Bolt</option>
+                <option value="Nut">Nut</option>
               </select>
             </Field>
-            <Field
+            {isProductionType(form.type) && <Field
               label="Robot / line"
               htmlFor="part-line"
               hint="Pilih dari daftar atau ketik line baru."
@@ -547,8 +569,8 @@ export function PartsPage() {
                   <option key={lineOption} value={lineOption} />
                 ))}
               </datalist>
-            </Field>
-            <Field label="Line proses" htmlFor="part-process" hint="Contoh: RB.G, RB.H, SS.H.">
+            </Field>}
+            {isProductionType(form.type) && <Field label="Line proses" htmlFor="part-process" hint="Contoh: RB.G, RB.H, SS.H.">
               <input
                 id="part-process"
                 className="input"
@@ -559,7 +581,7 @@ export function PartsPage() {
                 placeholder="RB.G"
                 required
               />
-            </Field>
+            </Field>}
             <Field
               label="Isi standar wadah"
               htmlFor="part-packaging"
@@ -613,7 +635,7 @@ export function PartsPage() {
               </select>
             </Field>
 
-            <div className="field" style={{ gridColumn: '1 / -1' }}>
+            {isProductionType(form.type) && <div className="field" style={{ gridColumn: '1 / -1' }}>
               <div className="field-label">
                 <label>Model yang memakai part ini</label>
               </div>
@@ -639,7 +661,7 @@ export function PartsPage() {
                 <p className="muted small">Belum ada model untuk dipilih.</p>
               )}
               <span className="field-hint">Pilih minimal satu model.</span>
-            </div>
+            </div>}
 
             <div className="form-actions" style={{ gridColumn: '1 / -1' }}>
               <Button type="button" variant="secondary" onClick={closeForm} disabled={saving}>
@@ -657,8 +679,7 @@ export function PartsPage() {
           </form>
 
           <Callout tone="info" style={{ marginTop: 12 }}>
-            Komponen/stock item non-produksi (bolt, nut, press part) dikelola di menu Packaging &amp;
-            Policy. Halaman ini khusus part produksi Assy dan Sub Assy.
+            Press Part, Child Part, Bolt, dan Nut adalah komponen BOM. Assy dan Sub Assy saja yang memiliki line, proses, model, dan antrean produksi.
           </Callout>
         </section>
       )}
@@ -677,6 +698,10 @@ export function PartsPage() {
                 <option value="all">Semua tipe</option>
                 <option value="Assy">Assy</option>
                 <option value="Sub_Assy">Sub Assy</option>
+                <option value="Press_Part">Press Part</option>
+                <option value="Child_Part">Child Part</option>
+                <option value="Bolt">Bolt</option>
+                <option value="Nut">Nut</option>
               </select>
             </div>
             <div className="select-wrap">

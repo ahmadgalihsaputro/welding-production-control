@@ -1,4 +1,4 @@
-import { Boxes, Container, PackageCheck, Plus, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react'
+import { Boxes, PackageCheck, Plus, RefreshCw, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -8,13 +8,15 @@ import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
-import { StatusBadge } from '../../components/ui/StatusBadge'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { describeApiError } from '../../lib/api'
 import {
   createStockPolicy,
   deleteStockPolicy,
+  listParts,
   listStockPolicy,
   updateStockPolicy,
+  type ProductionPartRecord,
   type StockPolicyRecord,
 } from '../../lib/masterApi'
 import { formatNumber } from '../../lib/utils'
@@ -29,17 +31,13 @@ const categories = [
   'Child Part',
 ]
 
-const containerOptions = ['Box standard', 'Pallet', 'Small bin']
-
 interface PolicyFormState {
   editingPartNumber: string | null
   partNumber: string
-  description: string
   category: string
   packaging: string
   maxStore: string
   safetyStock: string
-  container: string
   location: string
 }
 
@@ -47,24 +45,24 @@ function emptyForm(): PolicyFormState {
   return {
     editingPartNumber: null,
     partNumber: '',
-    description: '',
     category: 'Assy',
     packaging: '',
     maxStore: '',
     safetyStock: '',
-    container: containerOptions[0],
     location: '',
   }
 }
 
-function optionalInt(value: string): number | null {
-  const trimmed = value.trim()
-  if (!trimmed) return null
-  return Number(trimmed)
+function policyLocation(value: string): string {
+  const legacyContainers = ['Box standard', 'Pallet', 'Small bin']
+  const prefix = legacyContainers.find((container) => value.startsWith(`${container} · `))
+  return prefix ? value.slice(prefix.length + 3) : value
 }
 
 export function StockPolicyPage() {
+  const { confirm } = useConfirmation()
   const [policies, setPolicies] = useState<StockPolicyRecord[]>([])
+  const [parts, setParts] = useState<ProductionPartRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busyPartNumber, setBusyPartNumber] = useState<string | null>(null)
@@ -72,7 +70,7 @@ export function StockPolicyPage() {
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [containerFilter, setContainerFilter] = useState('all')
+  const [lineFilter, setLineFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<PolicyFormState>(emptyForm)
 
@@ -80,7 +78,9 @@ export function StockPolicyPage() {
     setLoading(true)
     setError('')
     try {
-      setPolicies(await listStockPolicy())
+      const [nextPolicies, nextParts] = await Promise.all([listStockPolicy(), listParts()])
+      setPolicies(nextPolicies)
+      setParts(nextParts)
     } catch (loadError) {
       setError(describeApiError(loadError, 'Data packaging & policy gagal dimuat.'))
     } finally {
@@ -94,15 +94,15 @@ export function StockPolicyPage() {
 
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase()
+    const lineByPartNumber = new Map(parts.map((part) => [part.partNumber, part.line]))
     return policies.filter((policy) => {
-      const container = policy.location.split(' · ')[0] ?? ''
       return (
         (categoryFilter === 'all' || policy.category === categoryFilter) &&
-        (containerFilter === 'all' || container === containerFilter) &&
+        (lineFilter === 'all' || lineByPartNumber.get(policy.partNumber) === lineFilter) &&
         (!needle || policy.partNumber.toLowerCase().includes(needle))
       )
     })
-  }, [policies, search, categoryFilter, containerFilter])
+  }, [policies, parts, search, categoryFilter, lineFilter])
 
   const openAddForm = () => {
     setForm(emptyForm())
@@ -112,18 +112,14 @@ export function StockPolicyPage() {
   }
 
   const openEditForm = (policy: StockPolicyRecord) => {
-    const container = policy.location.split(' · ')[0] ?? ''
-    const locationDetail = policy.location.split(' · ').slice(1).join(' · ') ?? ''
     setForm({
       editingPartNumber: policy.partNumber,
       partNumber: policy.partNumber,
-      description: policy.description,
       category: policy.category,
       packaging: String(policy.packaging),
       maxStore: String(policy.maxStore),
       safetyStock: String(policy.safetyStock),
-      container,
-      location: locationDetail,
+      location: policyLocation(policy.location),
     })
     setShowForm(true)
     setError('')
@@ -138,16 +134,15 @@ export function StockPolicyPage() {
   const savePolicy = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const partNumber = form.partNumber.trim().toUpperCase()
-    const description = form.description.trim()
     const category = form.category.trim()
     const locationDetail = form.location.trim()
-    if (!partNumber || !description || !category || !locationDetail) {
-      setError('Part number, deskripsi, kategori, dan lokasi wajib diisi.')
+    if (!partNumber || !category || !locationDetail) {
+      setError('Part number, kategori, dan lokasi wajib diisi.')
       return
     }
     const packaging = Number(form.packaging)
     if (!Number.isInteger(packaging) || packaging < 1) {
-      setError('Packaging harus bilangan bulat minimal 1.')
+      setError('Standar qty harus bilangan bulat minimal 1.')
       return
     }
     const maxStore = Number(form.maxStore)
@@ -160,6 +155,12 @@ export function StockPolicyPage() {
       setError('Safety stock harus bilangan bulat 0 atau lebih.')
       return
     }
+    const confirmed = await confirm({
+      title: form.editingPartNumber ? 'Konfirmasi perubahan stock policy' : 'Konfirmasi stock policy baru',
+      message: `${form.editingPartNumber ? 'Simpan perubahan' : 'Tambahkan policy'} untuk part ${partNumber}?`,
+      confirmLabel: form.editingPartNumber ? 'Simpan perubahan' : 'Tambah policy',
+    })
+    if (!confirmed) return
 
     setSaving(true)
     setError('')
@@ -167,23 +168,22 @@ export function StockPolicyPage() {
     try {
       if (form.editingPartNumber) {
         await updateStockPolicy(form.editingPartNumber, {
-          description,
           category,
           packaging,
           maxStore,
           safetyStock,
-          location: `${form.container} · ${locationDetail}`,
+          location: locationDetail,
         })
         setNotice(`Policy ${form.editingPartNumber} berhasil diperbarui.`)
       } else {
         await createStockPolicy({
           partNumber,
-          description,
+          description: partNumber,
           category,
           packaging,
           maxStore,
           safetyStock,
-          location: `${form.container} · ${locationDetail}`,
+          location: locationDetail,
         })
         setNotice(`Policy ${partNumber} berhasil ditambahkan.`)
       }
@@ -198,13 +198,13 @@ export function StockPolicyPage() {
   }
 
   const removePolicy = async (policy: StockPolicyRecord) => {
-    if (
-      !window.confirm(
-        `Hapus policy ${policy.partNumber}? Item yang masih dipakai part produksi, BOM, material, atau stock tidak dapat dihapus.`,
-      )
-    ) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Konfirmasi hapus stock policy',
+      message: `Hapus policy ${policy.partNumber}? Item yang masih dipakai part produksi, BOM, material, atau stok tidak dapat dihapus.`,
+      confirmLabel: 'Hapus policy',
+      tone: 'danger',
+    })
+    if (!confirmed) return
     setBusyPartNumber(policy.partNumber)
     setError('')
     setNotice('')
@@ -226,7 +226,6 @@ export function StockPolicyPage() {
       render: (policy) => (
         <div className="cell-stack">
           <span className="cell-main mono">{policy.partNumber}</span>
-          <span className="cell-sub">{policy.description}</span>
         </div>
       ),
     },
@@ -237,9 +236,9 @@ export function StockPolicyPage() {
     },
     {
       key: 'packaging',
-      header: 'Isi standar (pcs/wadah)',
+      header: 'Standar Qty',
       align: 'right',
-      render: (policy) => <span className="mono">{formatNumber(policy.packaging)} pcs/wadah</span>,
+      render: (policy) => <span className="mono">{formatNumber(policy.packaging)} pcs</span>,
     },
     {
       key: 'max',
@@ -254,29 +253,9 @@ export function StockPolicyPage() {
       render: (policy) => <span className="mono">{formatNumber(policy.safetyStock)} pcs</span>,
     },
     {
-      key: 'container',
-      header: 'Container',
-      render: (policy) => {
-        const container = policy.location.split(' · ')[0] ?? ''
-        return (
-          <span className="stock-location">
-            <Container size={11} /> {container}
-          </span>
-        )
-      },
-    },
-    {
       key: 'location',
       header: 'Lokasi',
-      render: (policy) => {
-        const location = policy.location.split(' · ').slice(1).join(' · ') ?? ''
-        return <span className="muted small">{location}</span>
-      },
-    },
-    {
-      key: 'status',
-      header: 'Status Stock',
-      render: (policy) => <StatusBadge status={policy.status} />,
+      render: (policy) => <span className="muted small">{policyLocation(policy.location)}</span>,
     },
     {
       key: 'action',
@@ -301,6 +280,11 @@ export function StockPolicyPage() {
   ]
 
   const totalPolicies = policies.length
+  const lines = [...new Set(
+    parts
+      .filter((part) => part.type === 'Assy' || part.type === 'Sub_Assy')
+      .map((part) => part.line),
+  )].sort()
   const avgPackaging =
     policies.length > 0
       ? Math.round(policies.reduce((sum, policy) => sum + policy.packaging, 0) / policies.length)
@@ -315,11 +299,11 @@ export function StockPolicyPage() {
       : 0
 
   return (
-    <div className="page">
+    <div className="page stock-policy-page">
       <PageHeader
         eyebrow="Master Data"
-        title="Packaging & Stock Policy"
-        subtitle="Standar packaging, Max Store, dan safety stock per part number. Kebijakan ini menentukan kapan buffer harus diisi dan kapan kanban belanja diterbitkan. Data tersimpan di database dan disinkronkan dengan Part Number produksi."
+        title="Stock Policy"
+        subtitle="Atur kategori, standar qty, max store, safety stock, dan lokasi untuk setiap part number."
         meta={
           <>
             <span className="page-meta__item">
@@ -357,12 +341,9 @@ export function StockPolicyPage() {
         <Callout tone="info">Memuat packaging & policy dari server…</Callout>
       )}
 
-      <Callout tone="info" title="Cara kerja policy & sinkronisasi">
-        Safety stock memicu peringatan low stock. Max Store membatasi penerimaan store in dari
-        produksi. Isi standar adalah jumlah pcs dalam satu box atau pallet (istilah wadah
-        disesuaikan dengan ukuran barang), dan menentukan kelipatan qty pada kanban dan pickup.
-        Perubahan isi standar
-        atau max store di halaman ini **langsung memperbarui** kolom yang sama di Master Data → Part Number.
+      <Callout tone="info" title="Safety stock dapat diedit">
+        Ubah data melalui tombol Edit pada baris part number. Perubahan standar qty dan max store
+        tetap disinkronkan dengan data part produksi.
       </Callout>
 
       <div className="kpi-grid">
@@ -377,10 +358,10 @@ export function StockPolicyPage() {
         <StatCard
           label="Rata-rata packaging"
           value={String(avgPackaging)}
-          suffix="pcs/wadah"
+          suffix="pcs"
           icon={Boxes}
           tone="sky"
-          note="Per container"
+          note="Standar qty per part"
         />
         <StatCard
           label="Safety stock"
@@ -407,14 +388,14 @@ export function StockPolicyPage() {
               <h2 className="section-title">{form.editingPartNumber ? 'Ubah policy' : 'Policy baru'}</h2>
               <p className="section-sub">
                 {form.editingPartNumber
-                  ? 'Part number tetap; deskripsi, kategori, packaging, max store, safety stock, dan lokasi dapat diperbarui.'
+                  ? 'Part number tetap; kategori, standar qty, max store, safety stock, dan lokasi dapat diperbarui.'
                   : 'Part number dibuat sekali dan tidak dapat diubah setelah tersimpan.'}
               </p>
             </div>
             <Badge tone="success">Terhubung database</Badge>
           </div>
 
-          <form className="form-grid" onSubmit={(event) => void savePolicy(event)}>
+          <form className="form-grid stock-policy-form" onSubmit={(event) => void savePolicy(event)}>
             <Field
               label="Part Number"
               htmlFor="policy-part-number"
@@ -432,18 +413,6 @@ export function StockPolicyPage() {
                 required
               />
             </Field>
-            <Field label="Deskripsi" htmlFor="policy-description">
-              <input
-                id="policy-description"
-                className="input"
-                value={form.description}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, description: event.target.value }))
-                }
-                placeholder="Contoh: Assy RN"
-                required
-              />
-            </Field>
             <Field label="Kategori" htmlFor="policy-category">
               <select
                 id="policy-category"
@@ -454,7 +423,10 @@ export function StockPolicyPage() {
                 }
                 required
               >
-                {categories.map((cat) => (
+                {form.editingPartNumber && form.category === 'Bolt/Nut' && (
+                  <option value="Bolt/Nut">Bolt/Nut (lama; pilih Bolt atau Nut saat mengubah)</option>
+                )}
+                {categories.filter((cat) => cat !== 'Bolt/Nut').map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
@@ -462,9 +434,9 @@ export function StockPolicyPage() {
               </select>
             </Field>
             <Field
-              label="Isi standar (pcs/wadah)"
+              label="Standar Qty (pcs)"
               htmlFor="policy-packaging"
-              hint="Jumlah pcs dalam satu box atau pallet. Pilih istilah sesuai ukuran barang; wajib bilangan bulat minimal 1."
+              hint="Jumlah standar per part; wajib bilangan bulat minimal 1."
             >
               <input
                 id="policy-packaging"
@@ -519,27 +491,9 @@ export function StockPolicyPage() {
               />
             </Field>
             <Field
-              label="Container"
-              htmlFor="policy-container"
-              hint="Tipe wadah standar."
-            >
-              <select
-                id="policy-container"
-                className="select"
-                value={form.container}
-                disabled
-              >
-                {containerOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field
-              label="Lokasi detail"
+              label="Lokasi"
               htmlFor="policy-location"
-              hint="Rak/posisi di dalam container, mis. R01-A-3."
+              hint="Contoh: R01-A-3."
             >
               <input
                 id="policy-location"
@@ -568,10 +522,6 @@ export function StockPolicyPage() {
             </div>
           </form>
 
-          <Callout tone="info" style={{ marginTop: 12 }}>
-            Lokasi disimpan sebagai "<strong>Container · Detail</strong>", mis. "Box standard · R01-A-3".
-            Perubahan packaging/max store di sini akan menimpa nilai di Part Number produksi.
-          </Callout>
         </section>
       )}
 
@@ -597,15 +547,15 @@ export function StockPolicyPage() {
             <div className="select-wrap">
               <select
                 className="select"
-                style={{ width: 150, height: 38, minHeight: 38 }}
-                value={containerFilter}
-                onChange={(event) => setContainerFilter(event.target.value)}
-                aria-label="Filter container"
+                style={{ width: 170, height: 38, minHeight: 38 }}
+                value={lineFilter}
+                onChange={(event) => setLineFilter(event.target.value)}
+                aria-label="Filter line proses"
               >
-                <option value="all">Semua container</option>
-                {containerOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
+                <option value="all">Semua line</option>
+                {lines.map((line) => (
+                  <option key={line} value={line}>
+                    {line}
                   </option>
                 ))}
               </select>

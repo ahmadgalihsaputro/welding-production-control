@@ -25,6 +25,7 @@ export interface ApiQueueItem {
   targetShift: number | null
   kanban: string
   taken: number
+  kanbanQuantity?: number | null
   printedQty: number
   printedKanbans: number
   stock: number
@@ -118,7 +119,7 @@ export function toApiType(type: QueueType): 'Assy' | 'Sub_Assy' {
 }
 
 function toUiLine(line: string | null | undefined): RobotLine {
-  return line?.includes('Robot H') ? 'Robot H' : 'Robot G'
+  return line ?? 'Robot G'
 }
 
 function toShift(value: number | null | undefined): ShiftNumber | undefined {
@@ -154,6 +155,7 @@ export function mapQueueItem(item: ApiQueueItem): QueueItem {
     targetShift: toShift(item.targetShift),
     kanban: item.kanban,
     taken: item.taken,
+    kanbanQuantity: item.kanbanQuantity ?? undefined,
     printedQty: item.printedQty,
     printedKanbans: item.printedKanbans,
     stock: item.stock,
@@ -262,12 +264,7 @@ export async function loadProductionState() {
 
 export async function scanProductionKanban(scan: ScannedKanban): Promise<ProductionRequest> {
   const created = await api.post<ApiProductionRequest>('/production/requests/scan', {
-    code: scan.code.trim().toUpperCase(),
-    partNumber: scan.partNumber.trim().toUpperCase(),
-    model: scan.model,
-    type: toApiType(scan.type),
-    qty: scan.qty,
-    process: scan.process,
+    code: scan.code.trim(),
     sourceShift: scan.sourceShift,
   })
   return mapRequest(created)

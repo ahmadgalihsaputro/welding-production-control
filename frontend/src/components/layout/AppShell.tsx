@@ -8,7 +8,7 @@ import { Topbar } from './Topbar'
 const SIDEBAR_KEY = 'wpc.sidebar'
 
 export function AppShell() {
-  const isMobile = useMediaQuery('(max-width: 1024px)')
+  const isMobile = useMediaQuery('(max-width: 1180px)')
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_KEY) === 'collapsed',

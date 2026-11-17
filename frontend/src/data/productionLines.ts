@@ -135,7 +135,14 @@ export function getProductionWorkAreas(role: Role): ProductionWorkArea[] {
       line: part.line,
       type: part.type,
       process: part.process,
+      partNumbers: [part.partNumber],
     })
+  }
+
+  for (const part of getProductionParts()) {
+    const id = `${part.line}:${part.type}:${part.process}`
+    const area = areas.get(id)
+    if (area && !area.partNumbers.includes(part.partNumber)) area.partNumbers.push(part.partNumber)
   }
 
   return Array.from(areas.values()).sort((a, b) => a.label.localeCompare(b.label))
@@ -143,12 +150,14 @@ export function getProductionWorkAreas(role: Role): ProductionWorkArea[] {
 
 export function matchesProductionWorkArea(
   workArea: ProductionWorkArea,
-  item: { line?: RobotLine; type: QueueType; process?: string },
+  item: { line?: RobotLine; type: QueueType; process?: string; partNumber?: string },
 ): boolean {
   return (
     item.line === workArea.line &&
     item.type === workArea.type &&
-    (!item.process || item.process === workArea.process)
+    (item.partNumber && workArea.partNumbers.length > 0
+      ? workArea.partNumbers.includes(item.partNumber)
+      : !workArea.process || !item.process || item.process === workArea.process)
   )
 }
 

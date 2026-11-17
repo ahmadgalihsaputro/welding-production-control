@@ -5,6 +5,7 @@ import { RoleGuard } from './components/layout/RoleGuard'
 import { AuthProvider } from './contexts/AuthContext'
 import { QueueProvider } from './contexts/QueueContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { ConfirmationProvider } from './contexts/ConfirmationContext'
 import { LoginPage } from './pages/auth/LoginPage'
 import { AssyQueuePage } from './pages/production/AssyQueuePage'
 import { ProductionAllocationPage } from './pages/production/ProductionAllocationPage'
@@ -29,8 +30,6 @@ import { LocationsPage } from './pages/master/LocationsPage'
 import { MachinesPage } from './pages/master/MachinesPage'
 import { ModelsPage } from './pages/master/ModelsPage'
 import { PartsPage } from './pages/master/PartsPage'
-import { ProductionStructurePage } from './pages/master/ProductionStructurePage'
-import { RoutingPage } from './pages/master/RoutingPage'
 import { ShiftsPage } from './pages/master/ShiftsPage'
 import { StockPolicyPage } from './pages/master/StockPolicyPage'
 import { WorkAreasPage } from './pages/master/WorkAreasPage'
@@ -59,9 +58,10 @@ import { UserListPage } from './pages/users/UserListPage'
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <QueueProvider>
-          <BrowserRouter>
+      <ConfirmationProvider>
+        <AuthProvider>
+          <QueueProvider>
+            <BrowserRouter>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route
@@ -106,12 +106,10 @@ export default function App() {
               <Route path="/inventory/ledger" element={<StockLedgerPage />} />
               <Route path="/inventory/adjustment" element={<StockAdjustmentPage />} />
 
-              <Route path="/master/structure" element={<ProductionStructurePage />} />
               <Route path="/master/models" element={<ModelsPage />} />
               <Route path="/master/parts" element={<PartsPage />} />
               <Route path="/master/bom" element={<BomPage />} />
               <Route path="/master/cycle-time" element={<CycleTimePage />} />
-              <Route path="/master/routing" element={<RoutingPage />} />
               <Route path="/master/machines" element={<MachinesPage />} />
               <Route path="/master/stock-policy" element={<StockPolicyPage />} />
               <Route path="/master/locations" element={<LocationsPage />} />
@@ -140,9 +138,10 @@ export default function App() {
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Routes>
-        </BrowserRouter>
+          </BrowserRouter>
         </QueueProvider>
-      </AuthProvider>
+        </AuthProvider>
+      </ConfirmationProvider>
     </ThemeProvider>
   )
 }
