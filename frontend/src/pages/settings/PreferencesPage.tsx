@@ -1,5 +1,5 @@
 import { LayoutDashboard, Monitor, Moon, Palette, Save, Sun } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
@@ -8,14 +8,70 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { Toggle } from '../../components/ui/Toggle'
 import { useTheme } from '../../contexts/ThemeContext'
 
+interface Preferences {
+  language: string
+  density: string
+  startPage: string
+  sidebarDefault: boolean
+  reduceMotion: boolean
+}
+
+const STORAGE_KEY = 'wpc.preferences.v1'
+const DEFAULT_PREFERENCES: Preferences = {
+  language: 'id',
+  density: 'comfortable',
+  startPage: 'dashboard',
+  sidebarDefault: false,
+  reduceMotion: false,
+}
+
+function loadPreferences(): Preferences {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return DEFAULT_PREFERENCES
+    return { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) }
+  } catch {
+    return DEFAULT_PREFERENCES
+  }
+}
+
 export function PreferencesPage() {
   const { theme, setTheme } = useTheme()
-  const [language, setLanguage] = useState('id')
-  const [density, setDensity] = useState('comfortable')
-  const [startPage, setStartPage] = useState('dashboard')
-  const [sidebarDefault, setSidebarDefault] = useState(false)
-  const [reduceMotion, setReduceMotion] = useState(false)
+  const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFERENCES)
   const [message, setMessage] = useState('')
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [pendingPrefs, setPendingPrefs] = useState<Preferences | null>(null)
+
+  useEffect(() => {
+    setPrefs(loadPreferences())
+  }, [])
+
+  const requestSave = (nextPrefs: Preferences) => {
+    setPendingPrefs(nextPrefs)
+    setShowConfirm(true)
+  }
+
+  const handleConfirm = () => {
+    if (!pendingPrefs) return
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingPrefs))
+    setPrefs(pendingPrefs)
+    setPendingPrefs(null)
+    setShowConfirm(false)
+    setMessage('Preferensi berhasil disimpan pada perangkat ini.')
+    setTimeout(() => setMessage(''), 3000)
+  }
+
+  const handleCancel = () => {
+    setPendingPrefs(null)
+    setShowConfirm(false)
+  }
+
+  const handleReset = () => {
+    localStorage.removeItem(STORAGE_KEY)
+    setPrefs(DEFAULT_PREFERENCES)
+    setMessage('Preferensi direset ke default.')
+    setTimeout(() => setMessage(''), 3000)
+  }
 
   return (
     <div className="page">
@@ -81,12 +137,17 @@ export function PreferencesPage() {
 
           <section className="card settings-card">
             <div className="settings-card__head">
-              <h3>Bahasa &amp; format</h3>
+              <h3>Bahasa & format</h3>
               <p>Format angka mengikuti locale Indonesia.</p>
             </div>
             <div className="form-grid">
               <Field label="Bahasa" htmlFor="pref-language">
-                <select id="pref-language" className="select" value={language} onChange={(event) => setLanguage(event.target.value)}>
+                <select
+                  id="pref-language"
+                  className="select"
+                  value={prefs.language}
+                  onChange={(event) => requestSave({ ...prefs, language: event.target.value })}
+                >
                   <option value="id">Bahasa Indonesia</option>
                   <option value="en">English</option>
                 </select>
@@ -106,7 +167,12 @@ export function PreferencesPage() {
                 </select>
               </Field>
               <Field label="Density tabel" htmlFor="pref-density">
-                <select id="pref-density" className="select" value={density} onChange={(event) => setDensity(event.target.value)}>
+                <select
+                  id="pref-density"
+                  className="select"
+                  value={prefs.density}
+                  onChange={(event) => requestSave({ ...prefs, density: event.target.value })}
+                >
                   <option value="comfortable">Comfortable</option>
                   <option value="compact">Compact</option>
                   <option value="spacious">Spacious</option>
@@ -125,17 +191,30 @@ export function PreferencesPage() {
                 <strong>Sidebar terbuka saat login</strong>
                 <span>Tampilkan sidebar dalam kondisi expanded.</span>
               </div>
-              <Toggle checked={sidebarDefault} onChange={setSidebarDefault} label="Sidebar terbuka saat login" />
+              <Toggle
+                checked={prefs.sidebarDefault}
+                onChange={(value) => requestSave({ ...prefs, sidebarDefault: value })}
+                label="Sidebar terbuka saat login"
+              />
             </div>
             <div className="switch-row">
               <div className="switch-copy">
                 <strong>Kurangi animasi</strong>
                 <span>Matikan transisi non-esensial pada perangkat lambat.</span>
               </div>
-              <Toggle checked={reduceMotion} onChange={setReduceMotion} label="Kurangi animasi" />
+              <Toggle
+                checked={prefs.reduceMotion}
+                onChange={(value) => requestSave({ ...prefs, reduceMotion: value })}
+                label="Kurangi animasi"
+              />
             </div>
             <Field label="Halaman awal setelah login" htmlFor="pref-start">
-              <select id="pref-start" className="select" value={startPage} onChange={(event) => setStartPage(event.target.value)}>
+              <select
+                id="pref-start"
+                className="select"
+                value={prefs.startPage}
+                onChange={(event) => requestSave({ ...prefs, startPage: event.target.value })}
+              >
                 <option value="dashboard">Dashboard</option>
                 <option value="schedule">Jadwal Produksi</option>
                 <option value="queue">Antrian Sub Assy</option>
@@ -143,11 +222,12 @@ export function PreferencesPage() {
               </select>
             </Field>
             <div className="form-actions">
-              <Button variant="secondary">Reset default</Button>
+              <Button type="button" variant="secondary" onClick={handleReset}>Reset default</Button>
               <Button
                 variant="primary"
                 leftIcon={<Save size={15} />}
-                onClick={() => setMessage('Preferensi berhasil disimpan pada perangkat ini.')}
+                disabled={!pendingPrefs}
+                onClick={() => requestSave(prefs)}
               >
                 Simpan preferensi
               </Button>
@@ -168,15 +248,15 @@ export function PreferencesPage() {
               </div>
               <div className="row row--between" style={{ marginTop: 10 }}>
                 <span className="info-label">Bahasa</span>
-                <span className="info-value">{language === 'id' ? 'Indonesia' : 'English'}</span>
+                <span className="info-value">{prefs.language === 'id' ? 'Indonesia' : 'English'}</span>
               </div>
               <div className="row row--between" style={{ marginTop: 10 }}>
                 <span className="info-label">Density</span>
-                <span className="info-value">{density}</span>
+                <span className="info-value">{prefs.density}</span>
               </div>
               <div className="row row--between" style={{ marginTop: 10 }}>
                 <span className="info-label">Start page</span>
-                <span className="info-value">{startPage}</span>
+                <span className="info-value">{prefs.startPage}</span>
               </div>
             </div>
             <Callout tone="info" className="callout" style={{ marginTop: 14 }}>
@@ -214,6 +294,16 @@ export function PreferencesPage() {
           </section>
         </div>
       </div>
+
+      {showConfirm && pendingPrefs && (
+        <Callout tone="info" title="Konfirmasi Perubahan" style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 420, zIndex: 100 }}>
+          <p>Simpan perubahan preferensi ini?</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={handleCancel}>Batalkan</Button>
+            <Button variant="primary" onClick={handleConfirm}>Simpan</Button>
+          </div>
+        </Callout>
+      )}
     </div>
   )
 }

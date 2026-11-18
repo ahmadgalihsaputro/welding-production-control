@@ -1,5 +1,5 @@
 import { Barcode, CheckCircle2, Printer, QrCode, ScanLine, Settings2, Tag } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
@@ -26,11 +26,58 @@ const initialPrinters: PrinterDevice[] = [
   { id: 'pr-4', name: 'Office Laser', model: 'HP LaserJet Pro', location: 'Meeting Room G', type: 'Laser', status: 'offline' },
 ]
 
+const STORAGE_KEY = 'wpc.printing.v1'
+
+function loadData(): { printers: PrinterDevice[]; autoPrint: boolean; labelSize: string } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { printers: initialPrinters, autoPrint: true, labelSize: '100x150' }
+    return JSON.parse(raw)
+  } catch {
+    return { printers: initialPrinters, autoPrint: true, labelSize: '100x150' }
+  }
+}
+
+function saveData(data: { printers: PrinterDevice[]; autoPrint: boolean; labelSize: string }) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+}
+
 export function PrintingPage() {
-  const [printers, setPrinters] = useState(initialPrinters)
+  const [printers, setPrinters] = useState<PrinterDevice[]>(initialPrinters)
   const [autoPrint, setAutoPrint] = useState(true)
   const [labelSize, setLabelSize] = useState('100x150')
   const [message, setMessage] = useState('')
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [pending, setPending] = useState<{ printers: PrinterDevice[]; autoPrint: boolean; labelSize: string } | null>(null)
+
+  useEffect(() => {
+    const data = loadData()
+    setPrinters(data.printers)
+    setAutoPrint(data.autoPrint)
+    setLabelSize(data.labelSize)
+  }, [])
+
+  const requestSave = (next: { printers: PrinterDevice[]; autoPrint: boolean; labelSize: string }) => {
+    setPending(next)
+    setShowConfirm(true)
+  }
+
+  const handleConfirm = () => {
+    if (!pending) return
+    saveData(pending)
+    setPrinters(pending.printers)
+    setAutoPrint(pending.autoPrint)
+    setLabelSize(pending.labelSize)
+    setPending(null)
+    setShowConfirm(false)
+    setMessage('Pengaturan cetak berhasil disimpan.')
+    setTimeout(() => setMessage(''), 3000)
+  }
+
+  const handleCancel = () => {
+    setPending(null)
+    setShowConfirm(false)
+  }
 
   const testPrint = (printer: PrinterDevice) => {
     if (printer.status !== 'online') {
@@ -38,13 +85,12 @@ export function PrintingPage() {
       return
     }
     setMessage(`Test print dikirim ke ${printer.name}. Periksa hasil label.`)
+    setTimeout(() => setMessage(''), 3000)
   }
 
   const setDefault = (id: string) => {
-    setPrinters((current) =>
-      current.map((printer) => ({ ...printer, isDefault: printer.id === id })),
-    )
-    setMessage('Printer default berhasil diubah.')
+    const nextPrinters = printers.map((printer) => ({ ...printer, isDefault: printer.id === id }))
+    requestSave({ printers: nextPrinters, autoPrint, labelSize })
   }
 
   return (
@@ -135,7 +181,12 @@ export function PrintingPage() {
             </div>
             <div className="form-grid">
               <Field label="Ukuran label" htmlFor="print-size">
-                <select id="print-size" className="select" value={labelSize} onChange={(event) => setLabelSize(event.target.value)}>
+                <select
+                  id="print-size"
+                  className="select"
+                  value={labelSize}
+                  onChange={(event) => requestSave({ printers, autoPrint, labelSize: event.target.value })}
+                >
                   <option value="100x150">100 × 150 mm</option>
                   <option value="80x100">80 × 100 mm</option>
                   <option value="60x80">60 × 80 mm</option>
@@ -163,7 +214,11 @@ export function PrintingPage() {
                 <strong>Cetak otomatis</strong>
                 <span>Print kanban langsung setelah store in / produksi selesai.</span>
               </div>
-              <Toggle checked={autoPrint} onChange={setAutoPrint} label="Cetak otomatis" />
+              <Toggle
+                checked={autoPrint}
+                onChange={(value) => requestSave({ printers, autoPrint: value, labelSize })}
+                label="Cetak otomatis"
+              />
             </div>
           </section>
 
@@ -237,6 +292,16 @@ export function PrintingPage() {
           </div>
         </div>
       </section>
+
+      {showConfirm && pending && (
+        <Callout tone="info" title="Konfirmasi Perubahan" style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 420, zIndex: 100 }}>
+          <p>Simpan pengaturan printer dan cetak?</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={handleCancel}>Batalkan</Button>
+            <Button variant="primary" onClick={handleConfirm}>Simpan</Button>
+          </div>
+        </Callout>
+      )}
     </div>
   )
 }

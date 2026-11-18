@@ -500,6 +500,23 @@
   line-height: 1.6;
 }
 
+.input:read-only,
+.input:disabled,
+.select:disabled,
+.textarea:disabled {
+  background: var(--inset-bg-strong);
+  border-color: var(--glass-line);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.input:read-only:hover,
+.input:disabled:hover,
+.select:disabled:hover,
+.textarea:disabled:hover {
+  border-color: var(--glass-line);
+}
+
 .input-wrap {
   position: relative;
 }

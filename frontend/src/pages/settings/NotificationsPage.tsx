@@ -1,5 +1,5 @@
 import { Bell, BellRing, Mail, MessageSquare, Save, Smartphone, TriangleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
@@ -26,16 +26,72 @@ const initialRules: NotificationRule[] = [
   { id: 'nr-7', title: 'Backup selesai', detail: 'Backup harian berhasil dijalankan.', app: false, email: true, whatsapp: false, critical: false },
 ]
 
+const STORAGE_KEY = 'wpc.notifications.v1'
+
+function loadRules(): NotificationRule[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return initialRules
+    return JSON.parse(raw)
+  } catch {
+    return initialRules
+  }
+}
+
+function loadQuietHours(): { enabled: boolean; digest: boolean; start: string; end: string } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY + '.quiet')
+    if (!raw) return { enabled: true, digest: true, start: '22:00', end: '06:00' }
+    return JSON.parse(raw)
+  } catch {
+    return { enabled: true, digest: true, start: '22:00', end: '06:00' }
+  }
+}
+
 export function NotificationsPage() {
-  const [rules, setRules] = useState(initialRules)
-  const [quietHours, setQuietHours] = useState(true)
-  const [digest, setDigest] = useState(true)
+  const [rules, setRules] = useState<NotificationRule[]>(initialRules)
+  const [quietHours, setQuietHours] = useState({ enabled: true, digest: true, start: '22:00', end: '06:00' })
   const [message, setMessage] = useState('')
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [pendingRules, setPendingRules] = useState<NotificationRule[] | null>(null)
+  const [pendingQuietHours, setPendingQuietHours] = useState<typeof quietHours | null>(null)
+
+  useEffect(() => {
+    setRules(loadRules())
+    setQuietHours(loadQuietHours())
+  }, [])
 
   const updateRule = (id: string, key: 'app' | 'email' | 'whatsapp', value: boolean) => {
-    setRules((current) =>
-      current.map((rule) => (rule.id === id ? { ...rule, [key]: value } : rule)),
-    )
+    const nextRules = rules.map((rule) => (rule.id === id ? { ...rule, [key]: value } : rule))
+    setPendingRules(nextRules)
+    setShowConfirm(true)
+  }
+
+  const updateQuietHours = (next: typeof quietHours) => {
+    setPendingQuietHours(next)
+    setShowConfirm(true)
+  }
+
+  const handleConfirm = () => {
+    if (pendingRules) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingRules))
+      setRules(pendingRules)
+      setPendingRules(null)
+    }
+    if (pendingQuietHours) {
+      localStorage.setItem(STORAGE_KEY + '.quiet', JSON.stringify(pendingQuietHours))
+      setQuietHours(pendingQuietHours)
+      setPendingQuietHours(null)
+    }
+    setShowConfirm(false)
+    setMessage('Preferensi notifikasi berhasil disimpan.')
+    setTimeout(() => setMessage(''), 3000)
+  }
+
+  const handleCancel = () => {
+    setPendingRules(null)
+    setPendingQuietHours(null)
+    setShowConfirm(false)
   }
 
   return (
@@ -58,7 +114,8 @@ export function NotificationsPage() {
           <Button
             variant="primary"
             leftIcon={<Save size={15} />}
-            onClick={() => setMessage('Preferensi notifikasi berhasil disimpan.')}
+            disabled={!pendingRules && !pendingQuietHours}
+            onClick={() => handleConfirm()}
           >
             Simpan
           </Button>
@@ -109,15 +166,27 @@ export function NotificationsPage() {
               <div className="row" style={{ gap: 16 }}>
                 <label className="row" style={{ gap: 6 }}>
                   <span className="muted small">App</span>
-                  <Toggle checked={rule.app} onChange={(value) => updateRule(rule.id, 'app', value)} label={`${rule.title} in-app`} />
+                  <Toggle
+                    checked={rule.app}
+                    onChange={(value) => updateRule(rule.id, 'app', value)}
+                    label={`${rule.title} in-app`}
+                  />
                 </label>
                 <label className="row" style={{ gap: 6 }}>
                   <span className="muted small">Email</span>
-                  <Toggle checked={rule.email} onChange={(value) => updateRule(rule.id, 'email', value)} label={`${rule.title} email`} />
+                  <Toggle
+                    checked={rule.email}
+                    onChange={(value) => updateRule(rule.id, 'email', value)}
+                    label={`${rule.title} email`}
+                  />
                 </label>
                 <label className="row" style={{ gap: 6 }}>
                   <span className="muted small">WA</span>
-                  <Toggle checked={rule.whatsapp} onChange={(value) => updateRule(rule.id, 'whatsapp', value)} label={`${rule.title} whatsapp`} />
+                  <Toggle
+                    checked={rule.whatsapp}
+                    onChange={(value) => updateRule(rule.id, 'whatsapp', value)}
+                    label={`${rule.title} whatsapp`}
+                  />
                 </label>
               </div>
             </div>
@@ -128,7 +197,7 @@ export function NotificationsPage() {
       <div className="report-split">
         <section className="card settings-card">
           <div className="settings-card__head">
-            <h3>Jam senyap &amp; ringkasan</h3>
+            <h3>Jam senyap & ringkasan</h3>
             <p>Kurangi gangguan di luar jam kerja.</p>
           </div>
           <div className="switch-row">
@@ -136,27 +205,47 @@ export function NotificationsPage() {
               <strong>Mode senyap 22:00–06:00</strong>
               <span>Notifikasi non-kritis ditahan sampai pagi.</span>
             </div>
-            <Toggle checked={quietHours} onChange={setQuietHours} label="Mode senyap" />
+            <Toggle
+              checked={quietHours.enabled}
+              onChange={(value) => updateQuietHours({ ...quietHours, enabled: value })}
+              label="Mode senyap"
+            />
           </div>
           <div className="switch-row">
             <div className="switch-copy">
               <strong>Ringkasan harian</strong>
               <span>Kirim rekap produksi dan stok setiap pukul 07:00.</span>
             </div>
-            <Toggle checked={digest} onChange={setDigest} label="Ringkasan harian" />
+            <Toggle
+              checked={quietHours.digest}
+              onChange={(value) => updateQuietHours({ ...quietHours, digest: value })}
+              label="Ringkasan harian"
+            />
           </div>
           <div className="form-grid" style={{ marginTop: 12 }}>
             <div className="field">
               <div className="field-label">
                 <label htmlFor="quiet-start">Mulai senyap</label>
               </div>
-              <input id="quiet-start" type="time" className="input" defaultValue="22:00" />
+              <input
+                id="quiet-start"
+                type="time"
+                className="input"
+                value={quietHours.start}
+                onChange={(event) => updateQuietHours({ ...quietHours, start: event.target.value })}
+              />
             </div>
             <div className="field">
               <div className="field-label">
                 <label htmlFor="quiet-end">Selesai senyap</label>
               </div>
-              <input id="quiet-end" type="time" className="input" defaultValue="06:00" />
+              <input
+                id="quiet-end"
+                type="time"
+                className="input"
+                value={quietHours.end}
+                onChange={(event) => updateQuietHours({ ...quietHours, end: event.target.value })}
+              />
             </div>
           </div>
         </section>
@@ -196,6 +285,16 @@ export function NotificationsPage() {
           </section>
         </div>
       </div>
+
+      {(pendingRules || pendingQuietHours) && (
+        <Callout tone="info" title="Konfirmasi Perubahan" style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 420, zIndex: 100 }}>
+          <p>Simpan perubahan notifikasi ini?</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={handleCancel}>Batalkan</Button>
+            <Button variant="primary" onClick={handleConfirm}>Simpan</Button>
+          </div>
+        </Callout>
+      )}
     </div>
   )
 }

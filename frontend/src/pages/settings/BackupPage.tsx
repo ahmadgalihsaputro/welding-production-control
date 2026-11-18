@@ -1,5 +1,5 @@
 import { Database, Download, HardDrive, History, RefreshCw, Save, Server, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
@@ -11,10 +11,60 @@ import { StatusBadge } from '../../components/ui/StatusBadge'
 import { backupLogs as initialLogs } from '../../data/mock'
 import type { BackupLog } from '../../types'
 
+interface BackupConfig {
+  frequency: string
+  retention: string
+  target: string
+}
+
+const STORAGE_KEY = 'wpc.backup.v1'
+const DEFAULT_CONFIG: BackupConfig = {
+  frequency: 'daily',
+  retention: '30',
+  target: 's3',
+}
+
+function loadConfig(): BackupConfig {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return DEFAULT_CONFIG
+    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
 export function BackupPage() {
   const [logs, setLogs] = useState<BackupLog[]>(initialLogs)
+  const [config, setConfig] = useState<BackupConfig>(DEFAULT_CONFIG)
   const [running, setRunning] = useState(false)
   const [message, setMessage] = useState('')
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [pendingConfig, setPendingConfig] = useState<BackupConfig | null>(null)
+
+  useEffect(() => {
+    setConfig(loadConfig())
+  }, [])
+
+  const requestSave = (nextConfig: BackupConfig) => {
+    setPendingConfig(nextConfig)
+    setShowConfirm(true)
+  }
+
+  const handleConfirm = () => {
+    if (!pendingConfig) return
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingConfig))
+    setConfig(pendingConfig)
+    setPendingConfig(null)
+    setShowConfirm(false)
+    setMessage('Konfigurasi backup berhasil disimpan.')
+    setTimeout(() => setMessage(''), 3000)
+  }
+
+  const handleCancel = () => {
+    setPendingConfig(null)
+    setShowConfirm(false)
+  }
 
   const runBackup = () => {
     setRunning(true)
@@ -23,7 +73,7 @@ export function BackupPage() {
       setLogs((current) => [
         {
           id: `bl-${Date.now()}`,
-          time: '12 Nov 2026 09:24',
+          time: new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
           type: 'Manual',
           size: '1,8 GB',
           duration: '4m 06s',
@@ -33,6 +83,7 @@ export function BackupPage() {
       ])
       setRunning(false)
       setMessage('Backup manual berhasil dibuat dan disimpan di object storage.')
+      setTimeout(() => setMessage(''), 3000)
     }, 1000)
   }
 
@@ -81,19 +132,29 @@ export function BackupPage() {
       <div className="report-split">
         <section className="card settings-card">
           <div className="settings-card__head">
-            <h3>Jadwal &amp; retensi</h3>
+            <h3>Jadwal & retensi</h3>
             <p>Konfigurasi backup otomatis</p>
           </div>
           <div className="form-grid">
             <Field label="Frekuensi backup" htmlFor="backup-frequency">
-              <select id="backup-frequency" className="select" defaultValue="daily">
+              <select
+                id="backup-frequency"
+                className="select"
+                value={config.frequency}
+                onChange={(event) => requestSave({ ...config, frequency: event.target.value })}
+              >
                 <option value="daily">Harian · 02:00</option>
                 <option value="12h">Setiap 12 jam</option>
                 <option value="weekly">Mingguan</option>
               </select>
             </Field>
             <Field label="Retensi" htmlFor="backup-retention">
-              <select id="backup-retention" className="select" defaultValue="30">
+              <select
+                id="backup-retention"
+                className="select"
+                value={config.retention}
+                onChange={(event) => requestSave({ ...config, retention: event.target.value })}
+              >
                 <option value="7">7 hari</option>
                 <option value="14">14 hari</option>
                 <option value="30">30 hari</option>
@@ -101,7 +162,12 @@ export function BackupPage() {
               </select>
             </Field>
             <Field label="Lokasi penyimpanan" htmlFor="backup-target">
-              <select id="backup-target" className="select" defaultValue="s3">
+              <select
+                id="backup-target"
+                className="select"
+                value={config.target}
+                onChange={(event) => requestSave({ ...config, target: event.target.value })}
+              >
                 <option value="s3">Object storage (S3)</option>
                 <option value="nas">NAS lokal</option>
                 <option value="both">S3 + NAS</option>
@@ -135,13 +201,13 @@ export function BackupPage() {
             <ProgressBar value={63} thick tone="sky" />
             <div className="storage-bar__labels">
               <span>Backup 280 GB</span>
-              <span>Log &amp; arsip 40 GB</span>
+              <span>Log & arsip 40 GB</span>
             </div>
           </div>
 
           <div className="form-actions">
             <Button variant="secondary">Reset jadwal</Button>
-            <Button variant="primary" leftIcon={<Save size={15} />}>
+            <Button variant="primary" leftIcon={<Save size={15} />} disabled={!pendingConfig} onClick={() => requestSave(config)}>
               Simpan konfigurasi
             </Button>
           </div>
@@ -170,7 +236,7 @@ export function BackupPage() {
                 </span>
                 <div className="movement__copy">
                   <strong>Archive transaksi</strong>
-                  <span>Data &gt; 12 bulan</span>
+                  <span>Data {'>'} 12 bulan</span>
                 </div>
                 <Badge tone="sky">Terjadwal</Badge>
               </div>
@@ -219,6 +285,16 @@ export function BackupPage() {
           ))}
         </div>
       </section>
+
+      {showConfirm && pendingConfig && (
+        <Callout tone="info" title="Konfirmasi Perubahan" style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 420, zIndex: 100 }}>
+          <p>Simpan konfigurasi backup dan retensi?</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={handleCancel}>Batalkan</Button>
+            <Button variant="primary" onClick={handleConfirm}>Simpan</Button>
+          </div>
+        </Callout>
+      )}
     </div>
   )
 }

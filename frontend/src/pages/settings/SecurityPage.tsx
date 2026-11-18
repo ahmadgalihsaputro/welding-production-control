@@ -18,6 +18,8 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { StatCard } from '../../components/ui/StatCard'
 import { Toggle } from '../../components/ui/Toggle'
 import { useAuth } from '../../contexts/AuthContext'
+import { api } from '../../lib/api'
+import { describeApiError } from '../../lib/api'
 
 export function SecurityPage() {
   const { user } = useAuth()
@@ -27,26 +29,53 @@ export function SecurityPage() {
   const [twoFactor, setTwoFactor] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [changing, setChanging] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
-  const savePassword = () => {
-    setError('')
-    setMessage('')
+  const validatePassword = () => {
     if (!current || !next || !confirm) {
       setError('Semua field password wajib diisi.')
-      return
+      return false
     }
     if (next.length < 8) {
       setError('Password baru minimal 8 karakter.')
-      return
+      return false
     }
     if (next !== confirm) {
       setError('Konfirmasi password tidak sama.')
-      return
+      return false
     }
-    setCurrent('')
-    setNext('')
-    setConfirm('')
-    setMessage('Password berhasil diubah. Sesi lain akan diminta login ulang.')
+    return true
+  }
+
+  const requestChange = () => {
+    if (!validatePassword()) return
+    setShowConfirm(true)
+  }
+
+  const handleConfirm = async () => {
+    setShowConfirm(false)
+    setChanging(true)
+    setError('')
+    try {
+      await api.patch('/auth/change-password', {
+        currentPassword: current,
+        newPassword: next,
+      })
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+      setMessage('Password berhasil diubah. Sesi lain akan diminta login ulang.')
+      setTimeout(() => setMessage(''), 5000)
+    } catch (err) {
+      setError(describeApiError(err, 'Gagal mengubah password.'))
+    } finally {
+      setChanging(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setShowConfirm(false)
   }
 
   return (
@@ -96,6 +125,7 @@ export function SecurityPage() {
                   value={current}
                   onChange={(event) => setCurrent(event.target.value)}
                   autoComplete="current-password"
+                  disabled={changing}
                 />
               </Field>
               <Field label="Password baru" htmlFor="sec-new">
@@ -106,6 +136,7 @@ export function SecurityPage() {
                   value={next}
                   onChange={(event) => setNext(event.target.value)}
                   autoComplete="new-password"
+                  disabled={changing}
                 />
               </Field>
               <Field label="Konfirmasi password" htmlFor="sec-confirm">
@@ -116,11 +147,12 @@ export function SecurityPage() {
                   value={confirm}
                   onChange={(event) => setConfirm(event.target.value)}
                   autoComplete="new-password"
+                  disabled={changing}
                 />
               </Field>
             </div>
             <div className="form-actions">
-              <Button variant="primary" leftIcon={<Save size={15} />} onClick={savePassword}>
+              <Button variant="primary" leftIcon={<Save size={15} />} loading={changing} onClick={requestChange}>
                 Ubah password
               </Button>
             </div>
@@ -226,6 +258,16 @@ export function SecurityPage() {
           </Callout>
         </div>
       </div>
+
+      {showConfirm && (
+        <Callout tone="info" title="Konfirmasi Perubahan" style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 420, zIndex: 100 }}>
+          <p>Yakin ingin mengubah password? Sesi lain akan logout otomatis.</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={handleCancel}>Batalkan</Button>
+            <Button variant="primary" onClick={handleConfirm} loading={changing}>Ubah</Button>
+          </div>
+        </Callout>
+      )}
     </div>
   )
 }

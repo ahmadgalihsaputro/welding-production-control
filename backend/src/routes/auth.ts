@@ -2,7 +2,7 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { z } from 'zod'
-import { authenticate, type AuthenticatedRequest } from '../middleware/auth.js'
+import { authenticate, requireRole, type AuthenticatedRequest } from '../middleware/auth.js'
 import { prisma } from '../lib/prisma.js'
 import { env } from '../config/env.js'
 import { currentUserShift } from '../lib/userShift.js'
@@ -145,7 +145,7 @@ const profileSchema = z.object({
   initials: z.string().min(1).max(4).optional(),
 })
 
-router.patch('/profile', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.patch('/profile', authenticate, requireRole('admin'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = profileSchema.parse(req.body)
     const user = await prisma.$transaction(async (tx) => {

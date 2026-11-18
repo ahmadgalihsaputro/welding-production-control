@@ -1,4 +1,4 @@
-import { Building2, Mail, MapPin, Phone, Save, ShieldCheck, UserRound } from 'lucide-react'
+import { Building2, Lock, Mail, MapPin, Pencil, Phone, Save, ShieldCheck, UserRound } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Avatar } from '../../components/ui/Avatar'
 import { Badge } from '../../components/ui/Badge'
@@ -7,16 +7,19 @@ import { Callout } from '../../components/ui/Callout'
 import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { useAuth } from '../../contexts/AuthContext'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { roleLabels } from '../../data/accounts'
 import { describeApiError } from '../../lib/api'
 
 export function ProfilePage() {
-  const { user, updateProfile } = useAuth()
+  const { user, updateProfile, hasRole } = useAuth()
+  const { confirm } = useConfirmation()
+  const canEdit = hasRole('admin')
   const [name, setName] = useState(user?.name ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
   const [phone, setPhone] = useState(user?.phone ?? '')
   const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  const [submitError, setSubmitError] = useState('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -32,15 +35,26 @@ export function ProfilePage() {
     setName(user.name)
     setEmail(user.email)
     setPhone(user.phone ?? '')
-    setMessage('')
-    setError('')
+    setSubmitError('')
   }
 
   const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!canEdit) return
+    if (!name.trim()) {
+      setSubmitError('Nama lengkap wajib diisi.')
+      return
+    }
+    const confirmed = await confirm({
+      title: 'Simpan perubahan profil?',
+      message: 'Nama, email, dan nomor telepon akan diperbarui pada database akun Anda.',
+      confirmLabel: 'Simpan perubahan',
+    })
+    if (!confirmed) return
+
     setSaving(true)
     setMessage('')
-    setError('')
+    setSubmitError('')
     try {
       await updateProfile({
         name: name.trim(),
@@ -48,8 +62,9 @@ export function ProfilePage() {
         phone: phone.trim() || null,
       })
       setMessage('Profil berhasil disimpan ke database.')
+      window.setTimeout(() => setMessage(''), 4000)
     } catch (saveError) {
-      setError(describeApiError(saveError, 'Profil gagal disimpan.'))
+      setSubmitError(describeApiError(saveError, 'Profil gagal disimpan.'))
     } finally {
       setSaving(false)
     }
@@ -62,13 +77,19 @@ export function ProfilePage() {
         title="My Profile"
         subtitle="Informasi akun yang digunakan pada seluruh aktivitas produksi, material, dan inventory."
         meta={
-          <span className="page-meta__item">
-            <ShieldCheck size={12} /> Tersinkron dengan database
-          </span>
+          <>
+            <span className="page-meta__item">
+              <ShieldCheck size={12} /> Tersinkron dengan database
+            </span>
+            <span className="page-meta__item">
+              {canEdit ? <Pencil size={12} /> : <Lock size={12} />}
+              {canEdit ? 'Dapat diedit' : 'Hanya baca'}
+            </span>
+          </>
         }
       />
 
-      {error && <Callout tone="danger" title="Profil gagal disimpan">{error}</Callout>}
+      {submitError && <Callout tone="danger" title="Profil gagal disimpan">{submitError}</Callout>}
       {message && <Callout tone="success">{message}</Callout>}
 
       <section className="card profile-banner">
@@ -96,38 +117,67 @@ export function ProfilePage() {
             <h3>Informasi pribadi</h3>
             <p>Data profil tersimpan pada akun Anda di database.</p>
           </div>
-          <form onSubmit={(event) => void saveProfile(event)}>
+
+          {!canEdit && (
+            <Callout tone="info">
+              Profil hanya dapat diubah oleh akun dengan role Admin. Hubungi Admin bila ada data
+              yang perlu diperbarui.
+            </Callout>
+          )}
+
+          <form onSubmit={saveProfile}>
             <div className="form-grid">
-            <Field label="Nama lengkap" htmlFor="profile-name">
-              <input id="profile-name" className="input" value={name} onChange={(event) => setName(event.target.value)} required />
-            </Field>
-            <Field label="Employee ID" htmlFor="profile-employee" hint="Tidak dapat diubah sendiri.">
-              <input id="profile-employee" className="input" value={user.employeeId} readOnly />
-            </Field>
-            <Field label="Email" htmlFor="profile-email">
-              <input id="profile-email" type="email" className="input" value={email} onChange={(event) => setEmail(event.target.value)} />
-            </Field>
-            <Field label="Nomor telepon" htmlFor="profile-phone">
-              <input id="profile-phone" type="tel" className="input" value={phone} onChange={(event) => setPhone(event.target.value)} />
-            </Field>
-            <Field label="Area kerja" htmlFor="profile-area">
-              <input id="profile-area" className="input" value={user.area} readOnly />
-            </Field>
-            <Field label="Line" htmlFor="profile-line">
-              <input id="profile-line" className="input" value={user.line} readOnly />
-            </Field>
+              <Field label="Nama lengkap" htmlFor="profile-name">
+                <input
+                  id="profile-name"
+                  className="input"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  readOnly={!canEdit}
+                  required
+                />
+              </Field>
+              <Field label="Email" htmlFor="profile-email">
+                <input
+                  id="profile-email"
+                  type="email"
+                  className="input"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  readOnly={!canEdit}
+                />
+              </Field>
+              <Field label="Nomor telepon" htmlFor="profile-phone">
+                <input
+                  id="profile-phone"
+                  type="tel"
+                  className="input"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  readOnly={!canEdit}
+                />
+              </Field>
+              <Field label="Employee ID" htmlFor="profile-employee">
+                <input id="profile-employee" className="input" value={user.employeeId} readOnly />
+              </Field>
+              <Field label="Area kerja" htmlFor="profile-area">
+                <input id="profile-area" className="input" value={user.area} readOnly />
+              </Field>
+              <Field label="Line" htmlFor="profile-line">
+                <input id="profile-line" className="input" value={user.line} readOnly />
+              </Field>
             </div>
-            <div className="form-actions">
-              <Button type="button" variant="secondary" onClick={resetForm} disabled={saving}>Batalkan</Button>
-              <Button
-                type="submit"
-                variant="primary"
-                leftIcon={<Save size={15} />}
-                loading={saving}
-              >
-                Simpan perubahan
-              </Button>
-            </div>
+
+            {canEdit && (
+              <div className="form-actions">
+                <Button type="button" variant="secondary" onClick={resetForm} disabled={saving}>
+                  Batalkan
+                </Button>
+                <Button type="submit" variant="primary" leftIcon={<Save size={15} />} loading={saving}>
+                  Simpan perubahan
+                </Button>
+              </div>
+            )}
           </form>
         </section>
 

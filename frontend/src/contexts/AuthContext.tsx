@@ -66,7 +66,7 @@ interface AuthContextValue {
   user: SessionUser | null
   isAuthenticated: boolean
   login: (identifier: string, password: string) => Promise<LoginResult>
-  updateProfile: (input: ProfileUpdateInput) => Promise<void>
+  updateProfile: (input: ProfileUpdateInput) => Promise<ApiUser>
   logout: () => void
   hasRole: (...roles: Role[]) => boolean
   activeLine: ProductionLineFilter
@@ -336,6 +336,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       }
     })
+    return updated
   }, [])
 
   const logout = useCallback(() => {

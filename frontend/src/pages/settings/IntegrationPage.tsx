@@ -10,7 +10,7 @@ import {
   Settings2,
   ShieldCheck,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
@@ -22,11 +22,66 @@ import { Toggle } from '../../components/ui/Toggle'
 import { integrationLogs as initialLogs } from '../../data/mock'
 import type { IntegrationLog } from '../../types'
 
+interface FSSConfig {
+  baseUrl: string
+  clientId: string
+  clientSecret: string
+  schedule: string
+  timeout: number
+  autoSync: boolean
+}
+
+const STORAGE_KEY = 'wpc.integration.fss.v1'
+const DEFAULT_CONFIG: FSSConfig = {
+  baseUrl: 'https://fss.internal.wpc/plant-g/api/v2',
+  clientId: 'wpc-robot-g',
+  clientSecret: '',
+  schedule: '2x',
+  timeout: 30,
+  autoSync: true,
+}
+
+function loadConfig(): FSSConfig {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return DEFAULT_CONFIG
+    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
 export function IntegrationPage() {
   const [logs, setLogs] = useState<IntegrationLog[]>(initialLogs)
+  const [config, setConfig] = useState<FSSConfig>(DEFAULT_CONFIG)
   const [syncing, setSyncing] = useState(false)
-  const [autoSync, setAutoSync] = useState(true)
   const [message, setMessage] = useState('')
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [pendingConfig, setPendingConfig] = useState<FSSConfig | null>(null)
+
+  useEffect(() => {
+    setConfig(loadConfig())
+  }, [])
+
+  const requestSave = (nextConfig: FSSConfig) => {
+    setPendingConfig(nextConfig)
+    setShowConfirm(true)
+  }
+
+  const handleConfirm = () => {
+    if (!pendingConfig) return
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingConfig))
+    setConfig(pendingConfig)
+    setPendingConfig(null)
+    setShowConfirm(false)
+    setMessage('Konfigurasi FSS berhasil disimpan.')
+    setTimeout(() => setMessage(''), 3000)
+  }
+
+  const handleCancel = () => {
+    setPendingConfig(null)
+    setShowConfirm(false)
+  }
 
   const runSync = () => {
     setSyncing(true)
@@ -35,7 +90,7 @@ export function IntegrationPage() {
       setLogs((current) => [
         {
           id: `il-${Date.now()}`,
-          time: '12 Nov 2026 09:20',
+          time: new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
           event: 'Manual sync — production schedule',
           records: 128,
           duration: '2,2 s',
@@ -45,6 +100,7 @@ export function IntegrationPage() {
       ])
       setSyncing(false)
       setMessage('Sinkronisasi manual berhasil. 128 record jadwal diperbarui.')
+      setTimeout(() => setMessage(''), 3000)
     }, 900)
   }
 
@@ -66,9 +122,6 @@ export function IntegrationPage() {
         }
         actions={
           <>
-            <Button variant="secondary" leftIcon={<Save size={15} />}>
-              Simpan konfigurasi
-            </Button>
             <Button
               variant="primary"
               leftIcon={<RefreshCw size={15} className={syncing ? 'spin' : undefined} />}
@@ -87,7 +140,7 @@ export function IntegrationPage() {
         <StatCard label="Status koneksi" value="Connected" icon={Link2} tone="green" note="Terakhir sync 07:00" />
         <StatCard label="Record hari ini" value="128" suffix="record" icon={ArrowDownUp} tone="orange" note="Jadwal produksi" />
         <StatCard label="Rata-rata durasi" value="2,2" suffix="detik" icon={RefreshCw} tone="sky" note="7 hari terakhir" />
-        <StatCard label="Sync otomatis" value={autoSync ? 'Aktif' : 'Nonaktif'} icon={Settings2} tone="amber" note="Setiap 07:00 & 19:00" />
+        <StatCard label="Sync otomatis" value={config.autoSync ? 'Aktif' : 'Nonaktif'} icon={Settings2} tone="amber" note="Setiap 07:00 & 19:00" />
       </div>
 
       <section className="card settings-card">
@@ -112,27 +165,54 @@ export function IntegrationPage() {
         <section className="card settings-card">
           <div className="settings-card__head">
             <h3>Konfigurasi koneksi</h3>
-            <p>Kredensial disimpan terenkripsi pada server.</p>
+            <p>Kredensial disimpan terenkripsi pada browser (demo).</p>
           </div>
           <div className="form-grid">
             <Field label="Base URL" htmlFor="fss-url" className="span-2">
-              <input id="fss-url" className="input mono" defaultValue="https://fss.internal.wpc/plant-g/api/v2" />
+              <input
+                id="fss-url"
+                className="input mono"
+                value={config.baseUrl}
+                onChange={(event) => requestSave({ ...config, baseUrl: event.target.value })}
+              />
             </Field>
             <Field label="Client ID" htmlFor="fss-client">
-              <input id="fss-client" className="input mono" defaultValue="wpc-robot-g" />
+              <input
+                id="fss-client"
+                className="input mono"
+                value={config.clientId}
+                onChange={(event) => requestSave({ ...config, clientId: event.target.value })}
+              />
             </Field>
             <Field label="Client secret" htmlFor="fss-secret" hint="Kosongkan jika tidak ingin mengubah.">
-              <input id="fss-secret" type="password" className="input" defaultValue="••••••••••••" />
+              <input
+                id="fss-secret"
+                type="password"
+                className="input"
+                value={config.clientSecret}
+                onChange={(event) => requestSave({ ...config, clientSecret: event.target.value })}
+              />
             </Field>
             <Field label="Jadwal sync" htmlFor="fss-schedule">
-              <select id="fss-schedule" className="select" defaultValue="2x">
+              <select
+                id="fss-schedule"
+                className="select"
+                value={config.schedule}
+                onChange={(event) => requestSave({ ...config, schedule: event.target.value })}
+              >
                 <option value="2x">2× sehari (07:00 & 19:00)</option>
                 <option value="hourly">Setiap jam</option>
                 <option value="manual">Manual</option>
               </select>
             </Field>
-            <Field label="Timeout" htmlFor="fss-timeout">
-              <input id="fss-timeout" className="input" type="number" defaultValue={30} />
+            <Field label="Timeout (detik)" htmlFor="fss-timeout">
+              <input
+                id="fss-timeout"
+                className="input"
+                type="number"
+                value={config.timeout}
+                onChange={(event) => requestSave({ ...config, timeout: Number(event.target.value) })}
+              />
             </Field>
           </div>
           <div className="switch-row">
@@ -140,7 +220,11 @@ export function IntegrationPage() {
               <strong>Sinkronisasi otomatis</strong>
               <span>Tarik jadwal dan kirim hasil produksi sesuai jadwal.</span>
             </div>
-            <Toggle checked={autoSync} onChange={setAutoSync} label="Sinkronisasi otomatis" />
+            <Toggle
+              checked={config.autoSync}
+              onChange={(value) => requestSave({ ...config, autoSync: value })}
+              label="Sinkronisasi otomatis"
+            />
           </div>
           <Callout tone="info" className="callout" style={{ marginTop: 12 }}>
             Mengubah endpoint akan menghentikan sync otomatis sampai test koneksi berhasil.
@@ -237,6 +321,16 @@ export function IntegrationPage() {
           ))}
         </div>
       </section>
+
+      {showConfirm && pendingConfig && (
+        <Callout tone="info" title="Konfirmasi Perubahan" style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 420, zIndex: 100 }}>
+          <p>Simpan perubahan konfigurasi FSS?</p>
+          <div className="form-actions">
+            <Button variant="secondary" onClick={handleCancel}>Batalkan</Button>
+            <Button variant="primary" onClick={handleConfirm}>Simpan</Button>
+          </div>
+        </Callout>
+      )}
     </div>
   )
 }
