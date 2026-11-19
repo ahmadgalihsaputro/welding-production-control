@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 
 interface ConnectionIndicatorProps {
   /** Optional className override */
@@ -13,6 +14,7 @@ interface ConnectionIndicatorProps {
  */
 export function ConnectionIndicator({ className }: ConnectionIndicatorProps = {}) {
   const { user } = useAuth()
+  const { t } = usePreferences()
   const [isConnected, setIsConnected] = useState(false)
   const [isChecking, setIsChecking] = useState(true)
 
@@ -84,7 +86,9 @@ export function ConnectionIndicator({ className }: ConnectionIndicatorProps = {}
     return null
   }
 
-  const label = isConnected ? 'Backend Terhubung' : 'Backend Tidak Tersedia'
+  const label = isConnected
+    ? t('Backend Terhubung', 'Backend connected')
+    : t('Backend Tidak Tersedia', 'Backend unavailable')
   const classes = [
     'connection-indicator',
     className,

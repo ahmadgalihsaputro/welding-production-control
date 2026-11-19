@@ -5,7 +5,8 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AuthLayout } from '../../components/auth/AuthLayout'
 import { Button } from '../../components/ui/Button'
 import { useAuth } from '../../contexts/AuthContext'
-import { defaultPathForRole } from '../../config/access'
+import { usePreferences } from '../../contexts/PreferencesContext'
+import { canAccess, defaultPathForRole } from '../../config/access'
 
 interface LocationState {
   from?: string
@@ -21,8 +22,14 @@ export function LoginPage() {
     cancelWorkAreaSelection,
   } = useAuth()
   const navigate = useNavigate()
+  const { preferences, t } = usePreferences()
   const location = useLocation()
   const state = location.state as LocationState | null
+
+  const startPageFor = (role: string) =>
+    canAccess(preferences.startPage, role as Parameters<typeof canAccess>[1])
+      ? preferences.startPage
+      : undefined
 
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -42,7 +49,12 @@ export function LoginPage() {
   }, [showForgot])
 
   if (isAuthenticated) {
-    return <Navigate to={user ? defaultPathForRole(user.role) : '/'} replace />
+    return (
+      <Navigate
+        to={(user && startPageFor(user.role)) ?? (user ? defaultPathForRole(user.role) : '/')}
+        replace
+      />
+    )
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -52,14 +64,14 @@ export function LoginPage() {
     try {
       const result = await login(identifier, password)
       if (!result.ok) {
-        setError(result.error ?? 'Login gagal. Coba lagi.')
+        setError(result.error ?? t('Login gagal. Coba lagi.', 'Login failed. Please try again.'))
         return
       }
       if (result.needsWorkArea) return
       navigate(
         state?.from && state.from !== '/login' && state.from !== '/'
           ? state.from
-          : result.destination ?? '/',
+          : startPageFor(user?.role ?? '') ?? result.destination ?? '/',
         { replace: true },
       )
     } finally {
@@ -70,7 +82,7 @@ export function LoginPage() {
   const handleWorkAreaSelect = (id: string) => {
     const area = pendingWorkAreas.find((item) => item.id === id)
     if (!selectWorkArea(id)) {
-      setError('Area kerja tidak valid. Silakan login kembali.')
+      setError(t('Area kerja tidak valid. Silakan login kembali.', 'Invalid work area. Please log in again.'))
       cancelWorkAreaSelection()
       return
     }
@@ -113,7 +125,7 @@ export function LoginPage() {
               className="input"
               value={identifier}
               onChange={(event) => setIdentifier(event.target.value)}
-              placeholder="Masukkan username"
+              placeholder={t('Masukkan username', 'Enter username')}
               autoComplete="username"
               autoFocus
             />
@@ -132,14 +144,14 @@ export function LoginPage() {
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Masukkan password"
+              placeholder={t('Masukkan password', 'Enter password')}
               autoComplete="current-password"
             />
             <button
               type="button"
               className="input-wrap__action"
               onClick={() => setShowPassword((value) => !value)}
-              aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+              aria-label={showPassword ? t('Sembunyikan password', 'Hide password') : t('Tampilkan password', 'Show password')}
             >
               {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
@@ -153,14 +165,14 @@ export function LoginPage() {
               checked={remember}
               onChange={(event) => setRemember(event.target.checked)}
             />
-            Ingat perangkat ini
+            {t('Ingat perangkat ini', 'Remember this device')}
           </label>
           <button
             type="button"
             className="auth-link auth-link--button"
             onClick={() => setShowForgot(true)}
           >
-            Lupa password?
+            {t('Lupa password?', 'Forgot password?')}
           </button>
         </div>
 
@@ -172,7 +184,7 @@ export function LoginPage() {
           disabled={submitting}
           rightIcon={<ArrowRight size={16} />}
         >
-          {submitting ? 'Menghubungkan…' : 'Login'}
+          {submitting ? t('Menghubungkan…', 'Connecting…') : t('Login', 'Log In')}
         </Button>
       </form>
 
@@ -191,8 +203,8 @@ export function LoginPage() {
               <span className="auth-popup__icon">
                 <Factory size={22} />
               </span>
-              <h3 id="work-area-title">Pilih area kerja</h3>
-              <p>Pilih area produksi yang akan dikerjakan. Kamu bisa berpindah area dari top bar setelah masuk.</p>
+              <h3 id="work-area-title">{t('Pilih area kerja', 'Select work area')}</h3>
+              <p>{t('Pilih area produksi yang akan dikerjakan. Kamu bisa berpindah area dari top bar setelah masuk.', 'Select the production area to work in. You can switch areas from the top bar after signing in.')}</p>
               <div className="stack-sm">
                 {pendingWorkAreas.map((area) => (
                   <Button
@@ -211,7 +223,7 @@ export function LoginPage() {
                 style={{ marginTop: 8 }}
                 onClick={cancelWorkAreaSelection}
               >
-                Kembali ke login
+                {t('Kembali ke login', 'Back to login')}
               </Button>
             </section>
           </div>,
@@ -235,12 +247,12 @@ export function LoginPage() {
               <span className="auth-popup__icon">
                 <KeyRound size={22} />
               </span>
-              <h3 id="forgot-password-title">Lupa password?</h3>
+              <h3 id="forgot-password-title">{t('Lupa password?', 'Forgot password?')}</h3>
               <p>
-                Silakan hubungi Admin untuk melakukan reset password. Sertakan username kamu saat menghubungi Admin.
+                {t('Silakan hubungi Admin untuk melakukan reset password. Sertakan username kamu saat menghubungi Admin.', 'Please contact the Admin to reset your password. Include your username when contacting the Admin.')}
               </p>
               <Button variant="primary" block onClick={() => setShowForgot(false)}>
-                Mengerti
+                {t('Mengerti', 'Got It')}
               </Button>
             </div>
           </div>,

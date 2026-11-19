@@ -17,6 +17,7 @@ import { DataTable, type Column } from '../../components/ui/DataTable'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useQueue } from '../../contexts/QueueContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { formatNumber } from '../../lib/utils'
 
 interface PickRow {
@@ -37,13 +38,14 @@ const recentPicks: PickRow[] = [
 ]
 
 export function SupplyPickupPage() {
+  const { t } = usePreferences()
   const { addFromScan } = useQueue()
   const [scanned, setScanned] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState('')
 
   const columns: Column<PickRow>[] = [
-    { key: 'time', header: 'Waktu', render: (row) => <span className="mono muted">{row.time}</span> },
+    { key: 'time', header: t('Waktu', 'Time'), render: (row) => <span className="mono muted">{row.time}</span> },
     {
       key: 'part',
       header: 'Part Number',
@@ -56,49 +58,54 @@ export function SupplyPickupPage() {
     },
     { key: 'qty', header: 'Qty', align: 'right', render: (row) => `${row.qty} pcs` },
     { key: 'user', header: 'Supply', render: (row) => row.user },
-    { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
+    { key: 'status', header: t('Status', 'Status'), render: (row) => <StatusBadge status={row.status} /> },
   ]
 
   return (
     <div className="page">
       <PageHeader
         eyebrow="Material Control"
-        title="Pengambilan Material oleh Supply"
-        subtitle="Scan Kanban Belanja lalu scan box Sub Assy yang diambil. Setiap pengambilan aktual langsung membuat kebutuhan replenishment."
+        title={t('Pengambilan Material oleh Supply', 'Material Pickup by Supply')}
+        subtitle={t(
+          'Scan Kanban Belanja lalu scan box Sub Assy yang diambil. Setiap pengambilan aktual langsung membuat kebutuhan replenishment.',
+          'Scan the Kanban Belanja then scan each Sub Assy box picked. Every actual pickup immediately creates a replenishment requirement.',
+        )}
         meta={
           <>
             <span className="page-meta__item">
               <ScanBarcode size={12} /> Scan mode
             </span>
             <span className="page-meta__item">
-              <ShieldCheck size={12} /> Satu box = satu transaksi
+              <ShieldCheck size={12} /> {t('Satu box = satu transaksi', 'One box = one transaction')}
             </span>
           </>
         }
         actions={
           <Button variant="secondary" leftIcon={<ClipboardCheck size={15} />}>
-            Buka daftar request
+            {t('Buka daftar request', 'Open request list')}
           </Button>
         }
       />
 
       {confirmed && (
-        <Callout tone="success" title="Pengambilan berhasil">
-          35 pcs 5220K814 sudah diambil dari Sub Assy Store. Permintaan replenishment masuk ke
-          Admin untuk dialokasikan ke shift produksi.
+        <Callout tone="success" title={t('Pengambilan berhasil', 'Pickup successful')}>
+          {t(
+            '35 pcs 5220K814 sudah diambil dari Sub Assy Store. Permintaan replenishment masuk ke Admin untuk dialokasikan ke shift produksi.',
+            '35 pcs 5220K814 has been picked from Sub Assy Store. The replenishment request is sent to Admin to be allocated to a production shift.',
+          )}
         </Callout>
       )}
-      {error && <Callout tone="danger" title="Pengambilan gagal">{error}</Callout>}
+      {error && <Callout tone="danger" title={t('Pengambilan gagal', 'Pickup failed')}>{error}</Callout>}
 
       <div className="material-split">
         <section className="card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Scan material pickup</h2>
-              <p className="section-sub">Gunakan scanner atau input kode manual</p>
+              <h2 className="section-title">{t('Scan material pickup', 'Scan material pickup')}</h2>
+              <p className="section-sub">{t('Gunakan scanner atau input kode manual', 'Use a scanner or enter the code manually')}</p>
             </div>
             <Badge tone="success" dot>
-              Scanner online
+              {t('Scanner online', 'Scanner online')}
             </Badge>
           </div>
 
@@ -106,11 +113,11 @@ export function SupplyPickupPage() {
             <div className="scan-icon">
               <ScanLine size={25} />
             </div>
-            <strong>{scanned ? 'BOX TERBACA' : 'SCAN KANBAN BOX'}</strong>
+            <strong>{scanned ? t('BOX TERBACA', 'BOX SCANNED') : t('SCAN KANBAN BOX', 'SCAN KANBAN BOX')}</strong>
             <span>
               {scanned
                 ? '5220K814 · 35 pcs · Sub Assy Store'
-                : 'Arahkan scanner ke barcode Kanban Sub Assy'}
+                : t('Arahkan scanner ke barcode Kanban Sub Assy', 'Point the scanner at the Sub Assy Kanban barcode')}
             </span>
             <Button
               variant="primary"
@@ -121,21 +128,21 @@ export function SupplyPickupPage() {
                 setConfirmed(false)
               }}
             >
-              {scanned ? 'Scan ulang' : 'Simulasikan scan'}
+              {scanned ? t('Scan ulang', 'Scan again') : t('Simulasikan scan', 'Simulate scan')}
             </Button>
           </div>
 
           <div className="stack" style={{ marginTop: 14 }}>
             <div className="glass-inset" style={{ padding: 14 }}>
               <div className="section-title" style={{ fontSize: 12, marginBottom: 8 }}>
-                Langkah pengambilan
+                {t('Langkah pengambilan', 'Pickup steps')}
               </div>
               <div className="stack-sm">
                 {[
-                  { icon: ScanBarcode, text: 'Scan Kanban Belanja dari Area Assy.' },
-                  { icon: Boxes, text: 'Scan setiap box Kanban Sub Assy yang diambil.' },
-                  { icon: MapPin, text: 'Validasi PN dan lokasi asal box.' },
-                  { icon: CheckCircle2, text: 'Konfirmasi qty aktual dan kurangi stok Store.' },
+                  { icon: ScanBarcode, text: t('Scan Kanban Belanja dari Area Assy.', 'Scan the Kanban Belanja from the Assy Area.') },
+                  { icon: Boxes, text: t('Scan setiap box Kanban Sub Assy yang diambil.', 'Scan each Sub Assy Kanban box picked.') },
+                  { icon: MapPin, text: t('Validasi PN dan lokasi asal box.', 'Validate the PN and the box origin location.') },
+                  { icon: CheckCircle2, text: t('Konfirmasi qty aktual dan kurangi stok Store.', 'Confirm the actual qty and deduct Store stock.') },
                 ].map((step, index) => (
                   <div className="row row--start" key={step.text} style={{ gap: 9 }}>
                     <span className="queue-mini__num">{index + 1}</span>
@@ -146,8 +153,10 @@ export function SupplyPickupPage() {
             </div>
 
             <Callout tone="warning">
-              Box yang sama tidak boleh menghasilkan transaksi ganda. Sistem akan menolak scan
-              ulang untuk Kanban yang sudah diproses.
+              {t(
+                'Box yang sama tidak boleh menghasilkan transaksi ganda. Sistem akan menolak scan ulang untuk Kanban yang sudah diproses.',
+                'The same box must not produce duplicate transactions. The system will reject a rescan of an already processed Kanban.',
+              )}
             </Callout>
           </div>
         </section>
@@ -156,10 +165,10 @@ export function SupplyPickupPage() {
           <section className="card">
             <div className="section-head">
               <div>
-                <h2 className="section-title">Hasil scan</h2>
-                <p className="section-sub">Validasi sebelum konfirmasi</p>
+                <h2 className="section-title">{t('Hasil scan', 'Scan result')}</h2>
+                <p className="section-sub">{t('Validasi sebelum konfirmasi', 'Validate before confirming')}</p>
               </div>
-              <StatusBadge status={scanned ? 'picked' : 'waiting'} label={scanned ? 'Valid' : 'Menunggu'} />
+              <StatusBadge status={scanned ? 'picked' : 'waiting'} label={scanned ? t('Valid', 'Valid') : t('Menunggu', 'Waiting')} />
             </div>
 
             <div className="scan-result">
@@ -172,7 +181,7 @@ export function SupplyPickupPage() {
                 <strong>{scanned ? '35 pcs' : '—'}</strong>
               </div>
               <div className="scan-result__item">
-                <span>Lokasi asal</span>
+                <span>{t('Lokasi asal', 'Origin location')}</span>
                 <strong>{scanned ? 'Sub Assy Store' : '—'}</strong>
               </div>
               <div className="scan-result__item">
@@ -184,7 +193,7 @@ export function SupplyPickupPage() {
                 <strong>{scanned ? 'MR-00125' : '—'}</strong>
               </div>
               <div className="scan-result__item">
-                <span>Stok sebelum</span>
+                <span>{t('Stok sebelum', 'Stock before')}</span>
                 <strong>{scanned ? '70 pcs' : '—'}</strong>
               </div>
             </div>
@@ -205,7 +214,7 @@ export function SupplyPickupPage() {
                     qty: 35,
                   })
                   if (!result.ok) {
-                    setError(result.error ?? 'Permintaan replenishment gagal dibuat.')
+                    setError(result.error ?? t('Permintaan replenishment gagal dibuat.', 'Failed to create replenishment request.'))
                     return
                   }
                   setConfirmed(true)
@@ -213,12 +222,12 @@ export function SupplyPickupPage() {
                   setError('')
                 }}
               >
-                Konfirmasi pengambilan
+                {t('Konfirmasi pengambilan', 'Confirm pickup')}
               </Button>
             </div>
 
             <div className="progress-meta" style={{ marginTop: 10 }}>
-              <span>Stok setelah transaksi</span>
+              <span>{t('Stok setelah transaksi', 'Stock after transaction')}</span>
               <strong>35 pcs</strong>
             </div>
             <div className="progress" style={{ marginTop: 4 }}>
@@ -229,16 +238,16 @@ export function SupplyPickupPage() {
           <section className="card">
             <div className="section-head">
               <div>
-                <h2 className="section-title">Dampak transaksi</h2>
-                <p className="section-sub">Otomatis setelah konfirmasi</p>
+                <h2 className="section-title">{t('Dampak transaksi', 'Transaction impact')}</h2>
+                <p className="section-sub">{t('Otomatis setelah konfirmasi', 'Automatic after confirmation')}</p>
               </div>
             </div>
             <div className="stack-sm">
               {[
-                'Stok Sub Assy Store berkurang 35 pcs.',
-                'Replenishment queue #05 dibuat untuk 35 pcs.',
-                'Riwayat transaksi mencatat user dan waktu.',
-                'Indikator kebutuhan produksi diperbarui.',
+                t('Stok Sub Assy Store berkurang 35 pcs.', 'Sub Assy Store stock decreases by 35 pcs.'),
+                t('Replenishment queue #05 dibuat untuk 35 pcs.', 'Replenishment queue #05 is created for 35 pcs.'),
+                t('Riwayat transaksi mencatat user dan waktu.', 'The transaction history records the user and time.'),
+                t('Indikator kebutuhan produksi diperbarui.', 'Production requirement indicators are updated.'),
               ].map((text) => (
                 <div className="row row--start" key={text} style={{ gap: 8 }}>
                   <CheckCircle2 size={15} className="text-green" style={{ marginTop: 1 }} />
@@ -252,7 +261,7 @@ export function SupplyPickupPage() {
               style={{ paddingLeft: 0, marginTop: 10 }}
               rightIcon={<ArrowRight size={13} />}
             >
-              Lihat antrean replenishment
+              {t('Lihat antrean replenishment', 'View replenishment queue')}
             </Button>
           </section>
         </div>
@@ -261,8 +270,8 @@ export function SupplyPickupPage() {
       <section className="card">
         <div className="section-head">
           <div>
-            <h2 className="section-title">Pengambilan terakhir</h2>
-            <p className="section-sub">Transaksi Supply hari ini</p>
+            <h2 className="section-title">{t('Pengambilan terakhir', 'Recent pickups')}</h2>
+            <p className="section-sub">{t('Transaksi Supply hari ini', 'Supply transactions today')}</p>
           </div>
           <Badge tone="neutral">{formatNumber(recentPicks.reduce((sum, row) => sum + row.qty, 0))} pcs</Badge>
         </div>

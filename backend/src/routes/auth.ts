@@ -174,6 +174,52 @@ router.patch('/profile', authenticate, requireRole('admin'), async (req: Authent
   }
 })
 
+const preferencesSchema = z.object({
+  language: z.enum(['id', 'en']),
+  dateFormat: z.enum(['long', 'numeric', 'iso']),
+  timezone: z.enum(['wib', 'wita', 'wit']),
+  density: z.enum(['comfortable', 'compact', 'spacious']),
+  reduceMotion: z.boolean(),
+  sidebarDefault: z.boolean(),
+  startPage: z.string().regex(/^\//),
+})
+
+const defaultPreferences = {
+  language: 'id',
+  dateFormat: 'long',
+  timezone: 'wib',
+  density: 'comfortable',
+  reduceMotion: false,
+  sidebarDefault: false,
+  startPage: '/',
+} as const
+
+router.get('/preferences', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { preferences: true },
+    })
+    const parsed = preferencesSchema.safeParse(user?.preferences)
+    res.json(parsed.success ? parsed.data : defaultPreferences)
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.put('/preferences', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const body = preferencesSchema.parse(req.body)
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { preferences: body },
+    })
+    res.json(body)
+  } catch (error) {
+    next(error)
+  }
+})
+
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8),

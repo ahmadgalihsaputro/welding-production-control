@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { useMediaQuery } from '../../hooks/useMediaQuery'
 import { ModuleTabs } from './ModuleTabs'
 import { Sidebar } from './Sidebar'
@@ -10,9 +11,12 @@ const SIDEBAR_KEY = 'wpc.sidebar'
 export function AppShell() {
   const isMobile = useMediaQuery('(max-width: 1180px)')
   const location = useLocation()
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem(SIDEBAR_KEY) === 'collapsed',
-  )
+  const { preferences } = usePreferences()
+  const [collapsed, setCollapsed] = useState(() => {
+    const stored = localStorage.getItem(SIDEBAR_KEY)
+    if (stored) return stored === 'collapsed'
+    return !preferences.sidebarDefault
+  })
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {

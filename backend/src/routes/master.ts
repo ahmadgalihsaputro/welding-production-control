@@ -1356,7 +1356,10 @@ router.delete('/kanban/:id', requireRole('admin'), async (req, res, next) => {
 router.get('/kanban-items', async (_req, res, next) => {
   try {
     const configs = await prisma.kanbanPartConfig.findMany({
-      include: { part: { select: { line: true, process: true, type: true } } },
+      include: {
+        part: { select: { line: true, process: true, type: true } },
+        printer: { select: { id: true, name: true, model: true, status: true, connectionType: true } },
+      },
       orderBy: [{ partNumber: 'asc' }, { model: 'asc' }],
     })
     res.json(configs.map(({ part, ...config }) => ({
@@ -1377,6 +1380,7 @@ const kanbanPartConfigSchema = z.object({
   storeLocation: z.string().min(1),
   kanbanType: z.enum(['KD', 'Reguler']),
   nextProcess: z.string().min(1),
+  printerId: z.string().nullable().optional(),
 })
 
 type ResolvedKanbanPartConfig =
@@ -1425,9 +1429,16 @@ async function validateKanbanPartConfig(
   if (!processPart && !processMachine) {
     return { valid: false, error: `Next Process ${nextProcess} belum terdaftar di Master Part atau Machine.` }
   }
+  const printerId = input.printerId?.trim() || null
+  if (printerId) {
+    const printer = await prisma.device.findUnique({ where: { id: printerId } })
+    if (!printer || printer.type !== 'Printer') {
+      return { valid: false, error: 'Printer yang dipilih belum terdaftar di Device Management.' }
+    }
+  }
   return {
     valid: true,
-    data: { ...input, partNumber, model, storeLocation, nextProcess },
+    data: { ...input, partNumber, model, storeLocation, nextProcess, printerId },
     part,
   }
 }
@@ -1448,7 +1459,10 @@ router.post('/kanban-items', writeRoles, async (req, res, next) => {
     if (existing) {
       return res.status(409).json({ message: 'Konfigurasi Kanban untuk PN dan model ini sudah ada.' })
     }
-    const config = await prisma.kanbanPartConfig.create({ data: resolved.data })
+    const config = await prisma.kanbanPartConfig.create({
+      data: resolved.data,
+      include: { printer: { select: { id: true, name: true, model: true, status: true, connectionType: true } } },
+    })
     res.status(201).json({
       ...config,
       line: resolved.part.line,
@@ -1483,6 +1497,7 @@ router.patch('/kanban-items/:id', writeRoles, async (req, res, next) => {
     const config = await prisma.kanbanPartConfig.update({
       where: { id: existing.id },
       data: resolved.data,
+      include: { printer: { select: { id: true, name: true, model: true, status: true, connectionType: true } } },
     })
     res.json({
       ...config,

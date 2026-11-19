@@ -11,6 +11,7 @@ import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Tabs } from '../../components/ui/Tabs'
 import { useConfirmation } from '../../contexts/ConfirmationContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { describeApiError } from '../../lib/api'
 import {
   createModel,
@@ -21,12 +22,6 @@ import {
   type ProductionModelRecord,
 } from '../../lib/masterApi'
 import { formatNumber } from '../../lib/utils'
-
-const statusTabs = [
-  { value: 'all', label: 'Semua' },
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-]
 
 interface ModelFormState {
   id: string | null
@@ -39,14 +34,14 @@ function emptyForm(): ModelFormState {
   return { id: null, code: '', name: '', status: 'active' }
 }
 
-function formatDate(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(date)
-}
-
 export function ModelsPage() {
   const { confirm } = useConfirmation()
+  const { t, formatDate } = usePreferences()
+  const statusTabs = [
+    { value: 'all', label: t('Semua', 'All') },
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+  ]
   const [models, setModels] = useState<ProductionModelRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -64,7 +59,7 @@ export function ModelsPage() {
     try {
       setModels(await listModels())
     } catch (loadError) {
-      setError(describeApiError(loadError, 'Daftar model gagal dimuat.'))
+      setError(describeApiError(loadError, t('Daftar model gagal dimuat.', 'Failed to load the model list.')))
     } finally {
       setLoading(false)
     }
@@ -113,17 +108,21 @@ export function ModelsPage() {
     const code = form.code.trim().toUpperCase()
     const name = form.name.trim()
     if (!code) {
-      setError('Kode model wajib diisi.')
+      setError(t('Kode model wajib diisi.', 'Model code is required.'))
       return
     }
     if (!name) {
-      setError('Nama model wajib diisi.')
+      setError(t('Nama model wajib diisi.', 'Model name is required.'))
       return
     }
     const confirmed = await confirm({
-      title: form.id ? 'Konfirmasi perubahan model' : 'Konfirmasi model baru',
-      message: `${form.id ? 'Simpan perubahan pada' : 'Tambahkan'} model ${code}?`,
-      confirmLabel: form.id ? 'Simpan perubahan' : 'Tambah model',
+      title: form.id
+        ? t('Konfirmasi perubahan model', 'Confirm model change')
+        : t('Konfirmasi model baru', 'Confirm new model'),
+      message: `${form.id ? t('Simpan perubahan pada', 'Save changes to') : t('Tambahkan', 'Add')} model ${code}?`,
+      confirmLabel: form.id
+        ? t('Simpan perubahan', 'Save changes')
+        : t('Tambah model', 'Add model'),
     })
     if (!confirmed) return
 
@@ -133,16 +132,16 @@ export function ModelsPage() {
     try {
       if (form.id) {
         await updateModel(form.id, { name, status: form.status })
-        setNotice(`Model ${code} berhasil diperbarui.`)
+        setNotice(`${t('Model', 'Model')} ${code} ${t('berhasil diperbarui.', 'updated successfully.')}`)
       } else {
         await createModel({ code, name, status: form.status })
-        setNotice(`Model ${code} berhasil ditambahkan.`)
+        setNotice(`${t('Model', 'Model')} ${code} ${t('berhasil ditambahkan.', 'added successfully.')}`)
       }
       setShowForm(false)
       setForm(emptyForm())
       await loadData()
     } catch (saveError) {
-      setError(describeApiError(saveError, 'Model gagal disimpan.'))
+      setError(describeApiError(saveError, t('Model gagal disimpan.', 'Failed to save the model.')))
     } finally {
       setSaving(false)
     }
@@ -151,9 +150,9 @@ export function ModelsPage() {
   const toggleStatus = async (model: ProductionModelRecord) => {
     const nextStatus: MasterStatus = model.status === 'active' ? 'inactive' : 'active'
     const confirmed = await confirm({
-      title: 'Konfirmasi status model',
-      message: `${nextStatus === 'active' ? 'Aktifkan' : 'Nonaktifkan'} model ${model.code}? Part yang sudah memakai model ini tetap tercatat.`,
-      confirmLabel: nextStatus === 'active' ? 'Aktifkan' : 'Nonaktifkan',
+      title: t('Konfirmasi status model', 'Confirm model status'),
+      message: `${nextStatus === 'active' ? t('Aktifkan', 'Activate') : t('Nonaktifkan', 'Deactivate')} model ${model.code}? ${t('Part yang sudah memakai model ini tetap tercatat.', 'Parts already using this model remain recorded.')}`,
+      confirmLabel: nextStatus === 'active' ? t('Aktifkan', 'Activate') : t('Nonaktifkan', 'Deactivate'),
       tone: nextStatus === 'active' ? 'primary' : 'danger',
     })
     if (!confirmed) return
@@ -162,10 +161,10 @@ export function ModelsPage() {
     setNotice('')
     try {
       await updateModel(model.id, { status: nextStatus })
-      setNotice(`Model ${model.code} ${nextStatus === 'active' ? 'diaktifkan' : 'dinonaktifkan'}.`)
+      setNotice(`${t('Model', 'Model')} ${model.code} ${nextStatus === 'active' ? t('diaktifkan', 'activated') : t('dinonaktifkan', 'deactivated')}.`)
       await loadData()
     } catch (statusError) {
-      setError(describeApiError(statusError, 'Status model gagal diubah.'))
+      setError(describeApiError(statusError, t('Status model gagal diubah.', 'Failed to change the model status.')))
     } finally {
       setBusyId(null)
     }
@@ -173,9 +172,9 @@ export function ModelsPage() {
 
   const removeModel = async (model: ProductionModelRecord) => {
     const confirmed = await confirm({
-      title: 'Konfirmasi hapus model',
-      message: `Hapus model ${model.code}? Model yang masih dipakai part, routing, atau jadwal tidak dapat dihapus.`,
-      confirmLabel: 'Hapus model',
+      title: t('Konfirmasi hapus model', 'Confirm model deletion'),
+      message: `${t('Hapus', 'Delete')} model ${model.code}? ${t('Model yang masih dipakai part, routing, atau jadwal tidak dapat dihapus.', 'Models still used by parts, routings, or schedules cannot be deleted.')}`,
+      confirmLabel: t('Hapus model', 'Delete model'),
       tone: 'danger',
     })
     if (!confirmed) return
@@ -184,10 +183,10 @@ export function ModelsPage() {
     setNotice('')
     try {
       await deleteModel(model.id)
-      setNotice(`Model ${model.code} dihapus.`)
+      setNotice(`${t('Model', 'Model')} ${model.code} ${t('dihapus.', 'deleted.')}`)
       await loadData()
     } catch (deleteError) {
-      setError(describeApiError(deleteError, 'Model gagal dihapus.'))
+      setError(describeApiError(deleteError, t('Model gagal dihapus.', 'Failed to delete the model.')))
     } finally {
       setBusyId(null)
     }
@@ -218,7 +217,7 @@ export function ModelsPage() {
     },
     {
       key: 'updated',
-      header: 'Diperbarui',
+      header: t('Diperbarui', 'Updated'),
       render: (model) => <span className="muted small">{formatDate(model.updatedAt)}</span>,
     },
     { key: 'status', header: 'Status', render: (model) => <StatusBadge status={model.status} /> },
@@ -229,7 +228,7 @@ export function ModelsPage() {
       render: (model) => (
         <div className="table-actions">
           <Button size="sm" variant="ghost" onClick={() => openEditForm(model)}>
-            Edit
+            {t('Edit', 'Edit')}
           </Button>
           <Button
             size="sm"
@@ -237,7 +236,7 @@ export function ModelsPage() {
             loading={busyId === model.id}
             onClick={() => void toggleStatus(model)}
           >
-            {model.status === 'active' ? 'Nonaktifkan' : 'Aktifkan'}
+            {model.status === 'active' ? t('Nonaktifkan', 'Deactivate') : t('Aktifkan', 'Activate')}
           </Button>
           <Button
             size="sm"
@@ -245,7 +244,7 @@ export function ModelsPage() {
             disabled={busyId === model.id}
             onClick={() => void removeModel(model)}
           >
-            Hapus
+            {t('Hapus', 'Delete')}
           </Button>
         </div>
       ),
@@ -259,12 +258,12 @@ export function ModelsPage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Master Data"
+        eyebrow={t('Master Data', 'Master Data')}
         title="Model"
-        subtitle="Daftar model produksi yang tersimpan di database. Model menghubungkan part number, BOM, dan routing produksi."
+        subtitle={t('Daftar model produksi yang tersimpan di database. Model menghubungkan part number, BOM, dan routing produksi.', 'List of production models stored in the database. Models link part numbers, BOM, and production routing.')}
         meta={
           <span className="page-meta__item">
-            <Shapes size={12} /> {models.length} model terdaftar
+            <Shapes size={12} /> {models.length} {t('model terdaftar', 'registered models')}
           </span>
         }
         actions={
@@ -275,41 +274,41 @@ export function ModelsPage() {
               loading={loading}
               onClick={() => void loadData()}
             >
-              Muat ulang
+              {t('Muat ulang', 'Reload')}
             </Button>
             <Button variant="primary" leftIcon={<Plus size={15} />} onClick={openAddForm}>
-              Tambah model
+              {t('Tambah model', 'Add model')}
             </Button>
           </>
         }
       />
 
       {error && (
-        <Callout tone="danger" title="Aksi gagal">
+        <Callout tone="danger" title={t('Aksi gagal', 'Action failed')}>
           {error}
         </Callout>
       )}
       {notice && <Callout tone="success">{notice}</Callout>}
       {loading && models.length === 0 && (
-        <Callout tone="info">Memuat daftar model dari server…</Callout>
+        <Callout tone="info">{t('Memuat daftar model dari server…', 'Loading model list from the server…')}</Callout>
       )}
 
       <div className="kpi-grid">
         <StatCard
-          label="Total model"
+          label={t('Total model', 'Total models')}
           value={String(models.length)}
           suffix="model"
           icon={Shapes}
           tone="orange"
-          note="Terdaftar di database"
+          note={t('Terdaftar di database', 'Registered in the database')}
         />
         <StatCard
-          label="Model aktif"
+          label={t('Model aktif', 'Active models')}
           value={String(active)}
           suffix="model"
           icon={Boxes}
           tone="green"
-          note="Dapat dipakai produksi"
+          note={t('Dapat dipakai produksi', 'Available for production')}
         />
         <StatCard
           label="Assy part"
@@ -317,7 +316,7 @@ export function ModelsPage() {
           suffix="PN"
           icon={Layers3}
           tone="sky"
-          note="Seluruh model"
+          note={t('Seluruh model', 'All models')}
         />
         <StatCard
           label="Sub assy part"
@@ -325,7 +324,7 @@ export function ModelsPage() {
           suffix="PN"
           icon={ToggleLeft}
           tone="amber"
-          note="Komponen penyusun"
+          note={t('Komponen penyusun', 'Component parts')}
         />
       </div>
 
@@ -334,19 +333,19 @@ export function ModelsPage() {
           <div className="section-head">
             <div>
               <h2 className="section-title">
-                {form.id ? 'Ubah model' : 'Model baru'}
+                {form.id ? t('Ubah model', 'Edit model') : t('Model baru', 'New model')}
               </h2>
               <p className="section-sub">
-                Kode model tidak dapat diubah setelah dibuat karena dipakai part, routing, dan jadwal.
+                {t('Kode model tidak dapat diubah setelah dibuat karena dipakai part, routing, dan jadwal.', 'The model code cannot be changed after creation because it is used by parts, routings, and schedules.')}
               </p>
             </div>
-            <Badge tone="success">Terhubung database</Badge>
+            <Badge tone="success">{t('Terhubung database', 'Connected to database')}</Badge>
           </div>
           <div className="form-grid master-model-form">
             <Field
-              label="Kode model"
+              label={t('Kode model', 'Model code')}
               htmlFor="model-code"
-              hint={form.id ? 'Kode model bersifat tetap.' : 'Contoh: RN3. Akan disimpan sebagai huruf besar.'}
+              hint={form.id ? t('Kode model bersifat tetap.', 'The model code is permanent.') : t('Contoh: RN3. Akan disimpan sebagai huruf besar.', 'Example: RN3. Will be saved in uppercase.')}
             >
               <input
                 id="model-code"
@@ -355,11 +354,11 @@ export function ModelsPage() {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, code: event.target.value }))
                 }
-                placeholder="Contoh: RN3"
+                placeholder={t('Contoh: RN3', 'Example: RN3')}
                 disabled={Boolean(form.id)}
               />
             </Field>
-            <Field label="Nama model" htmlFor="model-name">
+            <Field label={t('Nama model', 'Model name')} htmlFor="model-name">
               <input
                 id="model-name"
                 className="input"
@@ -367,7 +366,7 @@ export function ModelsPage() {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, name: event.target.value }))
                 }
-                placeholder="Contoh: RN3 Frame Series"
+                placeholder={t('Contoh: RN3 Frame Series', 'Example: RN3 Frame Series')}
               />
             </Field>
             <Field label="Status" htmlFor="model-status">
@@ -388,12 +387,11 @@ export function ModelsPage() {
             </Field>
           </div>
           <Callout tone="info" style={{ marginTop: 12 }}>
-            Model yang masih dipakai part, routing, atau jadwal tidak dapat dihapus. Gunakan status
-            inactive agar histori tetap utuh.
+            {t('Model yang masih dipakai part, routing, atau jadwal tidak dapat dihapus. Gunakan status inactive agar histori tetap utuh.', 'Models still used by parts, routings, or schedules cannot be deleted. Use inactive status to keep the history intact.')}
           </Callout>
           <div className="form-actions master-model-form__actions">
             <Button variant="secondary" onClick={closeForm} disabled={saving}>
-              Batal
+              {t('Batal', 'Cancel')}
             </Button>
             <Button
               variant="primary"
@@ -401,7 +399,7 @@ export function ModelsPage() {
               loading={saving}
               onClick={() => void saveModel()}
             >
-              {form.id ? 'Simpan perubahan' : 'Simpan model'}
+              {form.id ? t('Simpan perubahan', 'Save changes') : t('Simpan model', 'Save model')}
             </Button>
           </div>
         </section>
@@ -410,12 +408,12 @@ export function ModelsPage() {
       <section className="card">
         <div className="table-toolbar">
           <div className="toolbar-group">
-            <Tabs items={statusTabs} value={status} onChange={setStatus} ariaLabel="Filter status model" />
+            <Tabs items={statusTabs} value={status} onChange={setStatus} ariaLabel={t('Filter status model', 'Filter model status')} />
           </div>
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Cari model atau kode…"
+            placeholder={t('Cari model atau kode…', 'Search model or code…')}
             className="search-inline"
           />
         </div>
@@ -426,7 +424,7 @@ export function ModelsPage() {
           minWidth={900}
           footer={
             <span className="row" style={{ gap: 5 }}>
-              <Search size={12} /> Menampilkan {rows.length} dari {models.length} model
+              <Search size={12} /> {t('Menampilkan', 'Showing')} {rows.length} {t('dari', 'of')} {models.length} model
             </span>
           }
         />

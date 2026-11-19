@@ -4,11 +4,9 @@
 
 import type {
   AppUser,
-  BackupLog,
   BufferItem,
   Device,
   ExternalMaterial,
-  IntegrationLog,
   InventoryLocation,
   KanbanConfig,
   LedgerEntry,
@@ -2618,22 +2616,6 @@ export const permissionMatrix = [
   { feature: 'Ubah master data', operator_assy: 'no', operator_sub_assy: 'no', operator_both: 'no', leader: 'limited', admin: 'yes', management: 'no' },
   { feature: 'Lihat laporan', operator_assy: 'no', operator_sub_assy: 'no', operator_both: 'no', leader: 'yes', admin: 'yes', management: 'yes' },
   { feature: 'Kelola user & device', operator_assy: 'no', operator_sub_assy: 'no', operator_both: 'no', leader: 'no', admin: 'yes', management: 'no' },
-]
-
-/* Integration / Backup                                               */
-/* ------------------------------------------------------------------ */
-
-export const integrationLogs: IntegrationLog[] = [
-  { id: 'il-1', time: '12 Nov 2026 07:00', event: 'Scheduled sync — production schedule', records: 128, duration: '2,4 s', status: 'success' },
-  { id: 'il-2', time: '11 Nov 2026 07:00', event: 'Scheduled sync — production schedule', records: 124, duration: '2,1 s', status: 'success' },
-  { id: 'il-3', time: '10 Nov 2026 07:00', event: 'Scheduled sync — production schedule', records: 0, duration: '30,0 s', status: 'warning' },
-  { id: 'il-4', time: '09 Nov 2026 07:00', event: 'Scheduled sync — production schedule', records: 130, duration: '2,6 s', status: 'success' },
-]
-
-export const backupLogs: BackupLog[] = [
-  { id: 'bl-1', time: '12 Nov 2026 02:00', type: 'Automatic', size: '1,8 GB', duration: '4m 12s', status: 'success' },
-  { id: 'bl-2', time: '11 Nov 2026 02:00', type: 'Automatic', size: '1,7 GB', duration: '4m 02s', status: 'success' },
-  { id: 'bl-3', time: '10 Nov 2026 14:30', type: 'Manual', size: '1,7 GB', duration: '3m 58s', status: 'success' },
 ]
 
 /* Quick Actions                                                      */

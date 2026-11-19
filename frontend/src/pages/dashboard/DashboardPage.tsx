@@ -18,7 +18,7 @@ import {
   Target,
   TriangleAlert,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AreaChart } from '../../components/charts/AreaChart'
 import { BarChart } from '../../components/charts/BarChart'
@@ -26,40 +26,18 @@ import { DonutChart } from '../../components/charts/DonutChart'
 import { RadialGauge } from '../../components/charts/RadialGauge'
 import { WeldingIcon } from '../../components/brand/Logo'
 import { Badge } from '../../components/ui/Badge'
+import { Callout } from '../../components/ui/Callout'
 import { ProgressBar } from '../../components/ui/ProgressBar'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Tabs } from '../../components/ui/Tabs'
-import { Callout } from '../../components/ui/Callout'
 import { useAuth } from '../../contexts/AuthContext'
-import { useQueue } from '../../contexts/QueueContext'
-import { getProductionPart, matchesProductionWorkArea } from '../../data/productionLines'
-import {
-  isBoxCompletedAfterShiftTotal,
-  localDateKey,
-  matchesProductionShiftBox,
-  readProductionShiftRecords,
-} from '../../data/productionLog'
-import {
-  getProductionDateForShift,
-  getShiftNumberAt,
-  getShiftProgressAt,
-} from '../../data/productionPlanning'
-import {
-  cumulativeActual,
-  cumulativeTarget,
-  hourlyActual,
-  hourlyLabels,
-  hourlyTarget,
-  machines,
-  materialAlerts,
-  productionResults,
-  quickActions,
-  recentActivities,
-  scheduleItems,
-  weeklyOutput,
-} from '../../data/mock'
-import { cn, formatNumber, formatPercent, greeting, todayLabel } from '../../lib/utils'
+import { usePreferences } from '../../contexts/PreferencesContext'
+import { quickActions } from '../../data/mock'
+import { getShiftNumberAt, getShiftProgressAt } from '../../data/productionPlanning'
+import { describeApiError } from '../../lib/api'
+import { getDashboard, type DashboardData } from '../../lib/dashboardApi'
+import { cn, formatNumber, formatPercent, greeting } from '../../lib/utils'
 
 const quickIcons = {
   scan: ScanLine,
@@ -94,191 +72,127 @@ const activityTones: Record<string, string> = {
   system: 'amber',
 }
 
-function loadProductionTotals() {
-  try {
-    return { records: readProductionShiftRecords(), error: '' }
-  } catch (error) {
-    return {
-      records: [],
-      error: error instanceof Error ? error.message : 'Hasil shift gagal dibaca.',
-    }
-  }
+const hourlyLabels = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00']
+
+function cumulative(values: number[]) {
+  let sum = 0
+  return values.map((value) => (sum += value))
 }
 
 export function DashboardPage() {
   const { user, activeLine, activeWorkArea } = useAuth()
-  const { items, completed } = useQueue()
+  const { t, locale, formatDate, formatTime } = usePreferences()
   const navigate = useNavigate()
   const [trendView, setTrendView] = useState<'hourly' | 'cumulative'>('hourly')
-  const [productionTotals] = useState(loadProductionTotals)
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(() => new Date())
+
+  const dashboardLine = activeWorkArea?.line ?? activeLine
+  const loadDashboard = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      setDashboard(await getDashboard(dashboardLine))
+    } catch (loadError) {
+      setError(describeApiError(loadError, t('Data dashboard gagal dimuat.', 'Dashboard data failed to load.')))
+    } finally {
+      setLoading(false)
+    }
+  }, [dashboardLine, t])
+
+  useEffect(() => {
+    void loadDashboard()
+  }, [loadDashboard])
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000)
     return () => window.clearInterval(timer)
   }, [])
 
+  const data = dashboard
+  const kpi = data?.kpi
   const firstName = user?.name.split(' ')[0] ?? 'Operator'
   const activeShift = getShiftNumberAt(now)
   const shiftProgress = getShiftProgressAt(now)
   const queueType = activeWorkArea?.type ??
     (user?.role === 'operator_sub_assy' ? 'Sub Assy' : 'Assy')
-  const dashboardQueue = items.filter(
-    (item) =>
-      item.type === queueType &&
-      (activeWorkArea
-        ? matchesProductionWorkArea(activeWorkArea, {
-            ...item,
-            process: item.process ?? getProductionPart(item.partNumber)?.process,
-          })
-        : activeLine === 'all' || item.line === activeLine),
-  )
   const queuePath = queueType === 'Assy' ? '/production/assy-queue' : '/production/queue'
-  const visibleMachines = machines.filter(
-    (machine) =>
-      (activeWorkArea
-        ? machine.line === activeWorkArea.line &&
-          machine.processes.includes(
-            activeWorkArea.type === 'Assy' ? 'Assy Welding' : 'Sub Assy Welding',
-          )
-        : activeLine === 'all' || machine.line === activeLine),
+  const lineLabel = activeWorkArea?.label ?? (activeLine === 'all' ? t('Semua line', 'All lines') : activeLine)
+
+  const machines = useMemo(
+    () => data?.machines ?? [],
+    [data],
   )
-  const activeMachineCount = visibleMachines.filter((machine) => machine.status === 'active').length
-  const lineLabel = activeWorkArea?.label ?? (activeLine === 'all' ? 'Semua line' : activeLine)
-  const todayProductionTotals = productionTotals.records.filter(
-    (record) =>
-      record.date === (activeShift
-        ? getProductionDateForShift(activeShift, now)
-        : localDateKey(now)),
+  const activeMachineCount = machines.filter((machine) => machine.status === 'active').length
+
+  const daily = data?.daily ?? []
+  const weeklyLabels = daily.map((day) =>
+    new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(new Date(`${day.date}T00:00:00`)),
   )
-  const productionTotalKeys = new Set(
-    todayProductionTotals.map((record) =>
-      `${record.partNumber}:${record.shift}:${record.line}:${record.process ?? ''}`,
-    ),
+
+  const boxes = data?.completedBoxes ?? []
+  const hourlyActualValues = hourlyLabels.map((label) =>
+    boxes.filter((box) => formatTime(box.completedAt).slice(0, 2) === label.slice(0, 2))
+      .reduce((sum, box) => sum + box.qty, 0),
   )
-  const totalForBox = (box: (typeof completed)[number]) =>
-    todayProductionTotals.find((record) =>
-      matchesProductionShiftBox(box, record) &&
-      (record.process ?? '') === (getProductionPart(box.partNumber)?.process ?? ''),
-    )
-  const allResults = [
-    ...productionResults.filter((record) =>
-      !productionTotalKeys.has(
-        `${record.partNumber}:${record.shift}:${record.line}:${getProductionPart(record.partNumber)?.process ?? ''}`,
-      ),
-    ),
-    ...completed
-      .filter((box) => {
-        const total = totalForBox(box)
-        return !total || isBoxCompletedAfterShiftTotal(box, total)
-      })
-      .map((box) => ({
-      id: box.id,
-      partNumber: box.partNumber,
-      type: box.type,
-      ok: box.qty,
-      ng: 0,
-      shift: box.shift ?? 1,
-      operator: box.operator,
-      time: box.completedAt,
-      line: box.line ?? 'Robot G',
-    })),
-    ...todayProductionTotals.map((record) => ({
-      id: record.id,
-      partNumber: record.partNumber,
-      type: record.type,
-      ok: record.ok + completed
-        .filter((box) =>
-          totalForBox(box)?.id === record.id &&
-          isBoxCompletedAfterShiftTotal(box, record))
-        .reduce((sum, box) => sum + box.qty, 0),
-      ng: record.ng,
-      shift: record.shift,
-      operator: record.operator,
-      time: `${record.date} ${record.time}`,
-      line: record.line,
-    })),
-  ]
-  const visibleResults = allResults.filter(
-    (item) => {
-      if (item.type !== queueType) return false
-      if (activeWorkArea) {
-        const part = getProductionPart(item.partNumber)
-        return Boolean(
-          part &&
-            matchesProductionWorkArea(activeWorkArea, {
-              line: part.line,
-              type: item.type,
-              process: part.process,
-            }),
-        )
-      }
-      return activeLine === 'all' || item.line === activeLine
-    },
-  )
-  const visibleSchedule = scheduleItems.filter(
-    (item) =>
-      (!activeWorkArea || activeWorkArea.type === 'Assy') &&
-      (activeLine === 'all' || item.line === activeLine) &&
-      (!activeWorkArea ||
-        (item.line === activeWorkArea.line &&
-          getProductionPart(item.partNumber)?.process === activeWorkArea.process)),
-  )
-  const dashboardSummary = {
-    target: visibleSchedule.reduce((sum, item) => sum + item.target, 0),
-    actual: visibleResults.reduce((sum, item) => sum + item.ok, 0),
-    ngRate:
-      (visibleResults.reduce((sum, item) => sum + item.ng, 0) /
-        Math.max(visibleResults.reduce((sum, item) => sum + item.ok + item.ng, 0), 1)) * 100,
-    byShift: {
-      shift1: visibleResults.filter((item) => item.shift === 1).reduce((sum, item) => sum + item.ok, 0),
-      shift2: visibleResults.filter((item) => item.shift === 2).reduce((sum, item) => sum + item.ok, 0),
-    },
+  const hourlyTargetValues = kpi && kpi.target > 0
+    ? hourlyLabels.map(() => Math.round(kpi.target / hourlyLabels.length))
+    : hourlyLabels.map(() => 0)
+  const targetValues = trendView === 'hourly' ? hourlyTargetValues : cumulative(hourlyTargetValues)
+  const actualValues = trendView === 'hourly' ? hourlyActualValues : cumulative(hourlyActualValues)
+  const hasTrendData = boxes.length > 0
+
+  const shiftActual = {
+    shift1: boxes.filter((box) => box.shift === 1).reduce((sum, box) => sum + box.qty, 0),
+    shift2: boxes.filter((box) => box.shift === 2).reduce((sum, box) => sum + box.qty, 0),
   }
-  const achievement = (dashboardSummary.actual / Math.max(dashboardSummary.target, 1)) * 100
-  const hasTarget = visibleSchedule.length > 0
-  const hasResults = visibleResults.length > 0
-  const targetValues = trendView === 'hourly' ? hourlyTarget : cumulativeTarget
-  const actualValues = trendView === 'hourly' ? hourlyActual : cumulativeActual
-  const hasTrendData = activeLine === 'Robot G' && !activeWorkArea
-  const selectedTargetValues = !hasTrendData
-    ? targetValues.map(() => 0)
-    : targetValues
-  const selectedActualValues = !hasTrendData
-    ? actualValues.map(() => 0)
-    : actualValues
-  const selectedWeeklyOutput = !hasTrendData
-    ? weeklyOutput.map((item) => ({ ...item, target: 0, actual: 0 }))
-    : weeklyOutput
+  const shift2Target = (data?.schedules ?? [])
+    .filter((item) => item.shift === 2)
+    .reduce((sum, item) => sum + item.target, 0)
+
+  const hasTarget = (kpi?.target ?? 0) > 0
+  const hasResults = (kpi?.actual ?? 0) > 0 || (kpi?.completedToday ?? 0) > 0
+  const achievement = kpi?.achievement ?? 0
+  const ngRate = kpi && kpi.actual + kpi.ngToday > 0
+    ? (kpi.ngToday / (kpi.actual + kpi.ngToday)) * 100
+    : 0
+
+  const stockAlerts = data?.stockAlerts ?? []
+  const queue = data?.queue ?? []
+  const activities = data?.activities ?? []
 
   return (
     <div className="dashboard">
-      {productionTotals.error && (
-        <Callout tone="danger" title="Hasil produksi tidak tersedia">
-          {productionTotals.error}
+      {error && (
+        <Callout tone="danger" title={t('Data dashboard tidak tersedia', 'Dashboard data unavailable')}>
+          {error}
         </Callout>
       )}
+      {loading && !data && <Callout tone="info">{t('Memuat data dashboard dari database…', 'Loading dashboard data from the database...')}</Callout>}
       <section className="welcome-card card">
         <WeldingIcon size={190} className="welcome-flame" />
         <div className="welcome-card__copy">
           <span className="welcome-card__eyebrow">
             <span className="line-dot" />
-            {lineLabel} · {activeShift ? `Shift ${activeShift} · Online` : 'Di luar shift / istirahat'}
+            {lineLabel} · {activeShift ? `Shift ${activeShift} · Online` : t('Di luar shift / istirahat', 'Outside shift / break')}
           </span>
           <h1>
-            {greeting()}, <strong>{firstName}</strong>
+            {t(greeting(), 'Hello')}, <strong>{firstName}</strong>
           </h1>
           <p>
-            Produksi {lineLabel} berjalan sesuai data terpilih. Ada 4 hal yang perlu dicek sebelum
-            pergantian shift.
+            {t('Produksi', 'Production')} {lineLabel}{' '}
+            {t('berjalan sesuai data database terpilih. Ada 4 hal yang perlu dicek sebelum pergantian shift.', 'is running according to the selected database data. There are 4 things to check before the shift change.')}
           </p>
           <div className="welcome-meta">
             <span className="meta-chip">
               <CalendarDays size={12} />
-              {todayLabel(now)}
+              {formatDate(now)}
             </span>
             <span className="meta-chip">
               <Clock3 size={12} />
-              {activeShift ? `Shift ${activeShift}` : 'Tidak ada shift aktif'}
+              {activeShift ? `Shift ${activeShift}` : t('Tidak ada shift aktif', 'No active shift')}
             </span>
             <span className="meta-chip">
               <Factory size={12} />
@@ -286,24 +200,24 @@ export function DashboardPage() {
             </span>
             <span className="meta-chip">
               <CircleCheck size={12} />
-              FSS sync 07:00
+              {t('Database', 'Database')} · {kpi ? formatNumber(kpi.completedToday) : '—'} pcs
             </span>
           </div>
         </div>
 
         <div className="welcome-card__side">
           <div className="shift-clock">
-            <strong>{now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</strong>
+            <strong>{formatTime(now)}</strong>
             <span>
               {activeShift && shiftProgress !== undefined
-                ? `Shift ${activeShift} berjalan · ${Math.round(shiftProgress)}%`
-                : 'Di luar jam aktif'}
+                ? `Shift ${activeShift} ${t('berjalan', 'in progress')} · ${Math.round(shiftProgress)}%`
+                : t('Di luar jam aktif', 'Outside active hours')}
             </span>
             <ProgressBar
               value={shiftProgress ?? 0}
               thin
               tone="gradient"
-              label="Progress shift"
+              label={t('Progress shift', 'Shift progress')}
             />
           </div>
           <div className="welcome-quick">
@@ -314,24 +228,24 @@ export function DashboardPage() {
                 return true
               })
               .map((action) => {
-              const Icon = quickIcons[action.icon as keyof typeof quickIcons] ?? ScanLine
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="welcome-quick__item"
-                  onClick={() =>
-                    navigate(
-                      action.id === 'qa-2' && activeWorkArea?.type === 'Sub Assy'
-                        ? '/production/sub-assy'
-                        : quickRoutes[action.id] ?? '/',
-                    )
-                  }
-                >
-                  <Icon size={13} />
-                  {action.label}
-                </button>
-              )
+                const Icon = quickIcons[action.icon as keyof typeof quickIcons] ?? ScanLine
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className="welcome-quick__item"
+                    onClick={() =>
+                      navigate(
+                        action.id === 'qa-2' && activeWorkArea?.type === 'Sub Assy'
+                          ? '/production/sub-assy'
+                          : quickRoutes[action.id] ?? '/',
+                      )
+                    }
+                  >
+                    <Icon size={13} />
+                    {action.label}
+                  </button>
+                )
               })}
           </div>
         </div>
@@ -339,24 +253,23 @@ export function DashboardPage() {
 
       <div className="kpi-grid">
         <StatCard
-          label={`Target ${queueType}`}
-          value={hasTarget ? formatNumber(dashboardSummary.target) : '—'}
+          label={`${t('Target', 'Target')} ${queueType}`}
+          value={hasTarget ? formatNumber(kpi!.target) : '—'}
           suffix={hasTarget ? 'pcs' : undefined}
           icon={Target}
           tone="orange"
-          note={`${activeShift ? `Shift ${activeShift}` : 'Di luar shift'} · ${lineLabel}`}
-          spark={selectedTargetValues}
+          note={`${activeShift ? `Shift ${activeShift}` : t('Di luar shift', 'Outside shift')} · ${lineLabel}`}
+          spark={targetValues}
           sparkColor="#f97316"
         />
         <StatCard
           label={`Actual ${queueType}`}
-          value={hasResults ? formatNumber(dashboardSummary.actual) : '—'}
+          value={hasResults ? formatNumber(kpi!.actual + kpi!.completedToday) : '—'}
           suffix={hasResults ? 'pcs' : undefined}
           icon={PackageCheck}
           tone="sky"
-          trend={hasTrendData ? { label: '+12,4%', direction: 'up' } : undefined}
-          note="vs kemarin"
-          spark={selectedActualValues}
+          note={t('dari database', 'from database')}
+          spark={actualValues}
           sparkColor="#38bdf8"
         />
         <StatCard
@@ -364,19 +277,18 @@ export function DashboardPage() {
           value={hasTarget ? formatPercent(achievement) : '—'}
           icon={Gauge}
           tone="green"
-          trend={hasTrendData ? { label: '+6,1%', direction: 'up' } : undefined}
-          note="vs shift lalu"
-          spark={hasTrendData ? cumulativeActual : cumulativeActual.map(() => 0)}
+          note={t('dari target database', 'from database target')}
+          spark={cumulative(actualValues)}
           sparkColor="#10b981"
         />
         <StatCard
           label="Balance Target"
-          value={hasTarget ? formatNumber(dashboardSummary.target - dashboardSummary.actual) : '—'}
+          value={hasTarget ? formatNumber(kpi!.target - kpi!.actual - kpi!.completedToday) : '—'}
           suffix={hasTarget ? 'pcs' : undefined}
           icon={Hourglass}
           tone="amber"
-          note="Sisa target hari ini"
-          spark={hasTrendData ? [340, 330, 315, 290, 270] : [0, 0, 0, 0, 0]}
+          note={t('Sisa target hari ini', 'Remaining target today')}
+          spark={cumulative(hourlyTargetValues.map((value, index) => value - hourlyActualValues[index]))}
           sparkColor="#f59e0b"
         />
       </div>
@@ -385,16 +297,16 @@ export function DashboardPage() {
         <section className="card chart-card">
           <div className="chart-card__head">
             <div>
-              <h2 className="section-title">Production achievement</h2>
-              <p className="section-sub">Output per jam · {lineLabel} · {activeShift ? `Shift ${activeShift}` : 'semua shift'}</p>
+              <h2 className="section-title">{t('Production achievement', 'Production achievement')}</h2>
+              <p className="section-sub">{t('Output per jam', 'Output per hour')} · {lineLabel} · {activeShift ? `Shift ${activeShift}` : t('semua shift', 'all shifts')}</p>
             </div>
             <Tabs
-              ariaLabel="Tampilan grafik produksi"
+              ariaLabel={t('Tampilan grafik produksi', 'Production chart view')}
               value={trendView}
               onChange={(value) => setTrendView(value as 'hourly' | 'cumulative')}
               items={[
-                { value: 'hourly', label: 'Per jam' },
-                { value: 'cumulative', label: 'Kumulatif' },
+                { value: 'hourly', label: t('Per jam', 'Hourly') },
+                { value: 'cumulative', label: t('Kumulatif', 'Cumulative') },
               ]}
             />
           </div>
@@ -403,39 +315,39 @@ export function DashboardPage() {
             <AreaChart
               labels={hourlyLabels}
               height={400}
-              ariaLabel="Grafik target dan actual produksi per jam"
+              ariaLabel={t('Grafik target dan actual produksi per jam', 'Hourly production target and actual chart')}
               series={[
                 {
                   name: 'Target',
                   color: '#38bdf8',
-                  values: selectedTargetValues,
+                  values: targetValues,
                   area: false,
                   dashed: true,
                 },
-                { name: 'Actual', color: '#f97316', values: selectedActualValues },
+                { name: 'Actual', color: '#f97316', values: actualValues },
               ]}
             />
           ) : (
             <div className="empty-state" style={{ minHeight: 300 }}>
-              <p>Data tren per jam belum tersedia untuk {lineLabel}. Angka produksi di bawah tetap mengikuti data area terpilih.</p>
+              <p>{t('Belum ada box selesai untuk grafik per jam pada', 'No completed boxes for the hourly chart on')} {lineLabel}. {t('Angka produksi di bawah tetap mengikuti data database.', 'The production figures below still follow database data.')}</p>
             </div>
           )}
 
           <div className="chart-insight-row">
             <div className="chart-insight">
-              <span>Peak output</span>
-              <strong>{hasTrendData ? '136 pcs' : '—'}</strong>
-              <small>{hasTrendData ? '09:00 · Machine A' : 'Belum ada data'}</small>
+              <span>{t('Peak output', 'Peak output')}</span>
+              <strong>{hasTrendData ? `${Math.max(...hourlyActualValues)} pcs` : '—'}</strong>
+              <small>{hasTrendData ? `${hourlyLabels[hourlyActualValues.indexOf(Math.max(...hourlyActualValues))]}` : t('Belum ada data', 'No data yet')}</small>
             </div>
             <div className="chart-insight">
-              <span>Lowest output</span>
-              <strong>{hasTrendData ? '100 pcs' : '—'}</strong>
-              <small>{hasTrendData ? '16:00 · pergantian shift' : 'Belum ada data'}</small>
+              <span>{t('Lowest output', 'Lowest output')}</span>
+              <strong>{hasTrendData ? `${Math.min(...hourlyActualValues)} pcs` : '—'}</strong>
+              <small>{hasTrendData ? `${hourlyLabels[hourlyActualValues.indexOf(Math.min(...hourlyActualValues))]}` : t('Belum ada data', 'No data yet')}</small>
             </div>
             <div className="chart-insight">
-              <span>Rata-rata / jam</span>
-              <strong>{hasTrendData ? '124 pcs' : '—'}</strong>
-              <small>{hasTrendData ? 'Target 126 pcs' : 'Belum ada data'}</small>
+              <span>{t('Rata-rata / jam', 'Average / hour')}</span>
+              <strong>{hasTrendData ? `${Math.round(hourlyActualValues.reduce((a, b) => a + b, 0) / hourlyLabels.length)} pcs` : '—'}</strong>
+              <small>{hasTarget ? `${t('Target', 'Target')} ${formatNumber(Math.round(kpi!.target / hourlyLabels.length))} pcs` : t('Belum ada data', 'No data yet')}</small>
             </div>
           </div>
 
@@ -443,21 +355,21 @@ export function DashboardPage() {
             <div className="chart-summary">
               <div className="chart-summary__item">
                 <span>Target</span>
-                <strong>{hasTarget ? `${formatNumber(dashboardSummary.target)} pcs` : '—'}</strong>
+                <strong>{hasTarget ? `${formatNumber(kpi!.target)} pcs` : '—'}</strong>
               </div>
               <div className="chart-summary__item">
                 <span>Actual</span>
-                <strong>{hasResults ? `${formatNumber(dashboardSummary.actual)} pcs` : '—'}</strong>
+                <strong>{hasResults ? `${formatNumber(kpi!.actual + kpi!.completedToday)} pcs` : '—'}</strong>
               </div>
               <div className="chart-summary__item">
                 <span>Gap</span>
-                <strong>{hasTarget ? `${formatNumber(dashboardSummary.target - dashboardSummary.actual)} pcs` : '—'}</strong>
+                <strong>{hasTarget ? `${formatNumber(kpi!.target - kpi!.actual - kpi!.completedToday)} pcs` : '—'}</strong>
               </div>
             </div>
             <Badge tone={hasTarget ? 'success' : 'neutral'} dot>
               {hasTarget
-                ? `${formatPercent(achievement)} · ${achievement >= 80 ? 'On track' : 'Perlu perhatian'}`
-                : 'Target area belum tersedia'}
+                ? `${formatPercent(achievement)} · ${achievement >= 80 ? 'On track' : t('Perlu perhatian', 'Needs attention')}`
+                : t('Target area belum tersedia', 'Area target not yet available')}
             </Badge>
           </div>
         </section>
@@ -467,7 +379,7 @@ export function DashboardPage() {
             <div className="chart-card__head" style={{ marginBottom: 6 }}>
               <div>
                 <h2 className="section-title">Achievement</h2>
-                <p className="section-sub">Target vs hasil aktual</p>
+                <p className="section-sub">{t('Target vs hasil aktual', 'Target vs actual results')}</p>
               </div>
               <BadgeCheck size={18} className="text-green" />
             </div>
@@ -477,29 +389,29 @@ export function DashboardPage() {
                 <RadialGauge value={achievement} size={148} label="Achievement" />
               ) : (
                 <div className="empty-state" style={{ minHeight: 148, minWidth: 148 }}>
-                  <p>Target area belum tersedia.</p>
+                  <p>{t('Target area belum tersedia.', 'Area target not yet available.')}</p>
                 </div>
               )}
               <div className="achievement-facts">
                 <div className="fact-row">
                   <span>Target</span>
-                  <strong>{hasTarget ? `${formatNumber(dashboardSummary.target)} pcs` : '—'}</strong>
+                  <strong>{hasTarget ? `${formatNumber(kpi!.target)} pcs` : '—'}</strong>
                 </div>
                 <div className="fact-row">
                   <span>Actual</span>
-                  <strong>{hasResults ? `${formatNumber(dashboardSummary.actual)} pcs` : '—'}</strong>
+                  <strong>{hasResults ? `${formatNumber(kpi!.actual + kpi!.completedToday)} pcs` : '—'}</strong>
                 </div>
                 <div className="fact-row">
                   <span>Gap</span>
-                  <strong>{hasTarget ? `${formatNumber(dashboardSummary.target - dashboardSummary.actual)} pcs` : '—'}</strong>
+                  <strong>{hasTarget ? `${formatNumber(kpi!.target - kpi!.actual - kpi!.completedToday)} pcs` : '—'}</strong>
                 </div>
                 <div className="fact-row">
                   <span>NG ratio</span>
-                  <strong className="text-green">{hasResults ? formatPercent(dashboardSummary.ngRate, 2) : '—'}</strong>
+                  <strong className="text-green">{hasResults ? formatPercent(ngRate, 2) : '—'}</strong>
                 </div>
                 <div className="fact-row">
-                  <span>Downtime</span>
-                  <strong>—</strong>
+                  <span>{t('Antrian', 'Queue')}</span>
+                  <strong>{kpi ? kpi.queueWaiting + kpi.queueRunning : '—'}</strong>
                 </div>
               </div>
             </div>
@@ -508,32 +420,37 @@ export function DashboardPage() {
           <section className="card section-card">
             <div className="section-head">
               <div>
-                <h2 className="section-title">Machine status</h2>
-                <p className="section-sub">Work center {lineLabel}</p>
+                <h2 className="section-title">{t('Machine status', 'Machine status')}</h2>
+                <p className="section-sub">{t('Work center', 'Work center')} {lineLabel}</p>
               </div>
               <StatusBadge
                 status={activeMachineCount > 0 ? 'active' : 'inactive'}
-                label={`${activeMachineCount} aktif`}
+                label={`${activeMachineCount} ${t('aktif', 'active')}`}
               />
             </div>
 
             <div className="machine-list">
-              {visibleMachines.map((machine) => (
+              {machines.map((machine) => (
                 <div className="machine-row" key={machine.id}>
                   <span className={`machine-dot machine-dot--${machine.status}`} />
                   <div className="machine-copy">
                     <strong>{machine.name}</strong>
-                    <span>{machine.processes.join(' · ')}</span>
+                    <span>{machine.processes.length > 0 ? machine.processes.join(' · ') : machine.code}</span>
                   </div>
                   <span className="machine-load">
                     {machine.status === 'active'
-                      ? 'Aktif'
+                      ? t('Aktif', 'Active')
                       : machine.status === 'maintenance'
-                        ? 'Maintenance'
-                        : 'Nonaktif'}
+                        ? t('Maintenance', 'Maintenance')
+                        : t('Nonaktif', 'Inactive')}
                   </span>
                 </div>
               ))}
+              {machines.length === 0 && (
+                <div className="empty-state" style={{ padding: 16 }}>
+                  <p>{t('Belum ada mesin untuk area ini.', 'No machines for this area yet.')}</p>
+                </div>
+              )}
             </div>
           </section>
         </div>
@@ -543,35 +460,35 @@ export function DashboardPage() {
         <section className="card chart-card">
           <div className="chart-card__head">
             <div>
-              <h2 className="section-title">Weekly output</h2>
-              <p className="section-sub">Target vs actual 6 hari terakhir</p>
+              <h2 className="section-title">{t('Weekly output', 'Weekly output')}</h2>
+              <p className="section-sub">{t('Target vs actual 7 hari terakhir dari database', 'Target vs actual for the last 7 days from the database')}</p>
             </div>
             <Badge tone="sky">
-              {hasResults ? `${formatNumber(dashboardSummary.actual)} pcs hari ini` : 'Belum ada data aktual'}
+              {hasResults ? `${formatNumber(kpi!.actual + kpi!.completedToday)} ${t('pcs hari ini', 'pcs today')}` : t('Belum ada data aktual', 'No actual data yet')}
             </Badge>
           </div>
 
-          {hasTrendData ? (
+          {daily.some((day) => day.ok > 0 || day.target > 0) ? (
             <BarChart
-              labels={selectedWeeklyOutput.map((item) => item.day)}
+              labels={weeklyLabels}
               height={246}
-              ariaLabel="Grafik output mingguan target dan actual"
+              ariaLabel={t('Grafik output mingguan target dan actual', 'Weekly output target and actual chart')}
               series={[
                 {
                   name: 'Target',
                   color: '#38bdf8',
-                  values: selectedWeeklyOutput.map((item) => item.target),
+                  values: daily.map((item) => item.target),
                 },
                 {
                   name: 'Actual',
                   color: '#f97316',
-                  values: selectedWeeklyOutput.map((item) => item.actual),
+                  values: daily.map((item) => item.ok),
                 },
               ]}
             />
           ) : (
             <div className="empty-state" style={{ minHeight: 246 }}>
-              <p>Data output mingguan belum tersedia untuk {lineLabel}.</p>
+              <p>{t('Data output mingguan belum tersedia untuk', 'Weekly output data is not yet available for')} {lineLabel}.</p>
             </div>
           )}
         </section>
@@ -579,25 +496,25 @@ export function DashboardPage() {
         <section className="card section-card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Distribusi shift</h2>
-              <p className="section-sub">Output hari ini per shift</p>
+              <h2 className="section-title">{t('Distribusi shift', 'Shift distribution')}</h2>
+              <p className="section-sub">{t('Output hari ini per shift', 'Today\'s output per shift')}</p>
             </div>
             <Clock3 size={17} className="muted" />
           </div>
 
-          {hasResults ? (
+          {hasTrendData ? (
             <DonutChart
               data={[
-                { label: 'Shift 1', value: dashboardSummary.byShift.shift1, color: '#38bdf8' },
-                { label: 'Shift 2', value: dashboardSummary.byShift.shift2, color: '#f97316' },
+                { label: 'Shift 1', value: shiftActual.shift1, color: '#38bdf8' },
+                { label: 'Shift 2', value: shiftActual.shift2, color: '#f97316' },
               ]}
               size={172}
-              centerValue={formatNumber(dashboardSummary.actual)}
+              centerValue={formatNumber(shiftActual.shift1 + shiftActual.shift2)}
               centerLabel="pcs output"
             />
           ) : (
             <div className="empty-state" style={{ minHeight: 172 }}>
-              <p>Data output per shift belum tersedia untuk {lineLabel}.</p>
+              <p>{t('Data output per shift belum tersedia untuk', 'Output data per shift is not yet available for')} {lineLabel}.</p>
             </div>
           )}
 
@@ -606,11 +523,9 @@ export function DashboardPage() {
               <Activity size={14} />
             </div>
             <div className="callout__copy">
-              <strong>Shift 2 bersiap</strong>
+              <strong>{t('Shift 2 bersiap', 'Shift 2 preparing')}</strong>
               <div>
-                Target Shift 2 sebesar {formatNumber(visibleSchedule
-                  .filter((item) => item.shift === 2)
-                  .reduce((sum, item) => sum + item.target, 0))} pcs. Pastikan Sub Assy Store cukup.
+                {t('Target Shift 2 sebesar', 'Shift 2 target is')} {formatNumber(shift2Target)} {t('pcs dari jadwal database.', 'pcs from the database schedule.')}
               </div>
             </div>
           </div>
@@ -621,30 +536,36 @@ export function DashboardPage() {
         <section className="card section-card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Material alerts</h2>
-              <p className="section-sub">Perlu tindakan hari ini</p>
+              <h2 className="section-title">{t('Material alerts', 'Material alerts')}</h2>
+              <p className="section-sub">{t('Perlu tindakan hari ini', 'Needs action today')}</p>
             </div>
             <Badge tone="danger" dot>
-              {materialAlerts.length} alert
+              {stockAlerts.length} alert
             </Badge>
           </div>
 
           <div className="stack-sm">
-            {materialAlerts.map((alert) => {
-              const Icon = alertIcons[alert.severity]
+            {stockAlerts.map((alert) => {
+              const severity = alert.status === 'empty' ? 'danger' : alert.status === 'low' ? 'warning' : 'info'
+              const Icon = alertIcons[severity]
               return (
                 <div className="alert-row" key={alert.id}>
-                  <div className={`alert-icon stat-icon--${alertTones[alert.severity]}`}>
+                  <div className={`alert-icon stat-icon--${alertTones[severity]}`}>
                     <Icon size={15} />
                   </div>
                   <div className="alert-copy">
-                    <span className="alert-title">{alert.title}</span>
-                    <span className="alert-detail">{alert.detail}</span>
+                    <span className="alert-title">{alert.partNumber}</span>
+                    <span className="alert-detail">{alert.description} · {alert.store} / {alert.safetyStock}</span>
                   </div>
-                  <span className="alert-count">{alert.count}</span>
+                  <span className="alert-count">{alert.status}</span>
                 </div>
               )
             })}
+            {stockAlerts.length === 0 && (
+              <div className="empty-state" style={{ padding: 16 }}>
+                <p>{t('Tidak ada alert stok.', 'No stock alerts.')}</p>
+              </div>
+            )}
           </div>
 
           <button
@@ -653,25 +574,25 @@ export function DashboardPage() {
             style={{ marginTop: 10, paddingLeft: 0 }}
             onClick={() => navigate('/inventory/overview')}
           >
-            Lihat inventory <ArrowRight size={13} />
+            {t('Lihat inventory', 'View inventory')} <ArrowRight size={13} />
           </button>
         </section>
 
         <section className="card section-card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Antrian {queueType}</h2>
+              <h2 className="section-title">{t('Antrian', 'Queue')} {queueType}</h2>
               <p className="section-sub">
-                {queueType === 'Assy' ? 'Produksi Assy' : 'Urutan replenishment FIFO'}
+                {queueType === 'Assy' ? t('Produksi Assy', 'Assy Production') : t('Urutan replenishment FIFO', 'FIFO replenishment order')}
               </p>
             </div>
             <Badge tone={queueType === 'Assy' ? 'sky' : 'orange'}>
-              {dashboardQueue.length} antrian
+              {queue.length} {t('antrian', 'in queue')}
             </Badge>
           </div>
 
           <div className="queue-mini-list">
-            {dashboardQueue.slice(0, 4).map((item) => (
+            {queue.slice(0, 4).map((item) => (
               <div
                 className={cn('queue-mini', item.priority === 'urgent' && 'is-urgent')}
                 key={item.id}
@@ -680,12 +601,17 @@ export function DashboardPage() {
                 <div className="queue-mini__copy">
                   <strong>{item.partNumber}</strong>
                   <span>
-                    {item.taken} pcs diambil · {item.time}
+                    {item.taken} {t('pcs diambil', 'pcs taken')} · {item.time}
                   </span>
                 </div>
                 <StatusBadge status={item.priority} />
               </div>
             ))}
+            {queue.length === 0 && (
+              <div className="empty-state" style={{ padding: 16 }}>
+                <p>{t('Antrian kosong.', 'Queue is empty.')}</p>
+              </div>
+            )}
           </div>
 
           <button
@@ -694,32 +620,37 @@ export function DashboardPage() {
             style={{ marginTop: 10 }}
             onClick={() => navigate(queuePath)}
           >
-            Buka antrian <ArrowRight size={13} />
+            {t('Buka antrian', 'Open queue')} <ArrowRight size={13} />
           </button>
         </section>
 
         <section className="card section-card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Recent activity</h2>
-              <p className="section-sub">Transaksi terakhir hari ini</p>
+              <h2 className="section-title">{t('Recent activity', 'Recent activity')}</h2>
+              <p className="section-sub">{t('Aktivitas terakhir dari database', 'Latest activity from the database')}</p>
             </div>
             <Activity size={17} className="muted" />
           </div>
 
           <div className="timeline">
-            {recentActivities.map((activity) => (
+            {activities.map((activity) => (
               <div className="timeline-item" key={activity.id}>
                 <span className={`timeline-dot ${activityTones[activity.type] === 'sky' ? 'timeline-dot--sky' : activityTones[activity.type] === 'green' ? 'timeline-dot--green' : activityTones[activity.type] === 'amber' ? 'timeline-dot--amber' : ''}`} />
                 <div>
                   <div className="timeline-head">
                     <span className="timeline-title">{activity.title}</span>
-                    <span className="timeline-time">{activity.time}</span>
+                    <span className="timeline-time">{formatTime(activity.time)}</span>
                   </div>
                   <span className="timeline-text">{activity.detail}</span>
                 </div>
               </div>
             ))}
+            {activities.length === 0 && (
+              <div className="empty-state" style={{ padding: 16 }}>
+                <p>{t('Belum ada aktivitas.', 'No activity yet.')}</p>
+              </div>
+            )}
           </div>
         </section>
       </div>

@@ -67,6 +67,7 @@ export interface ScheduleItem {
   shift: 1 | 2
   dueTime: string
   line: string
+  updatedAt?: string
 }
 
 export interface QueueItem {
@@ -393,24 +394,6 @@ export interface TransactionRow {
   user: string
   location: string
   status: 'posted' | 'pending' | 'void'
-}
-
-export interface IntegrationLog {
-  id: string
-  time: string
-  event: string
-  records: number
-  duration: string
-  status: 'success' | 'warning' | 'error'
-}
-
-export interface BackupLog {
-  id: string
-  time: string
-  type: 'Automatic' | 'Manual'
-  size: string
-  duration: string
-  status: 'success' | 'failed'
 }
 
 export interface ChartSeries {

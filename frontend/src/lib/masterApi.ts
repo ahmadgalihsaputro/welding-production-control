@@ -67,11 +67,14 @@ export interface DeviceRecord {
   id: string
   name: string
   type: 'Tablet' | 'PC' | 'Scanner' | 'Printer'
+  model: string | null
   location: string
   assignedTo: string | null
   status: 'online' | 'offline' | 'maintenance'
   lastSeen: string | null
   connectionType: 'wireless' | 'wired' | null
+  isDefault: boolean
+  kanbanConfigCount: number
   createdAt: string
   updatedAt: string
 }
@@ -79,10 +82,12 @@ export interface DeviceRecord {
 export interface DeviceInput {
   name: string
   type: 'Tablet' | 'PC' | 'Scanner' | 'Printer'
+  model?: string | null
   location: string
   assignedTo?: string | null
   status?: 'online' | 'offline' | 'maintenance'
-  connectionType?: 'wireless' | 'wired'
+  connectionType?: 'wireless' | 'wired' | null
+  isDefault?: boolean
 }
 
 export type UpdateDeviceInput = Partial<DeviceInput>
@@ -509,6 +514,14 @@ export interface KanbanConfigRecord {
 
 export type KanbanConfigInput = Omit<KanbanConfigRecord, 'id'>
 
+export interface KanbanPrinter {
+  id: string
+  name: string
+  model: string | null
+  status: 'online' | 'offline' | 'maintenance'
+  connectionType: 'wireless' | 'wired' | null
+}
+
 export interface KanbanPartConfigRecord {
   id: string
   partNumber: string
@@ -517,6 +530,8 @@ export interface KanbanPartConfigRecord {
   storeLocation: string
   kanbanType: 'KD' | 'Reguler'
   nextProcess: string
+  printerId: string | null
+  printer: KanbanPrinter | null
   line: string
   process: string
   partType: PartType
@@ -531,6 +546,7 @@ export interface KanbanPartConfigInput {
   storeLocation: string
   kanbanType: 'KD' | 'Reguler'
   nextProcess: string
+  printerId?: string | null
 }
 
 export interface InventoryLocationRecord {

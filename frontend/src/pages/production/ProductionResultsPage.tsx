@@ -13,6 +13,8 @@ import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Tabs } from '../../components/ui/Tabs'
 import { useQueue } from '../../contexts/QueueContext'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
+import { describeApiError } from '../../lib/api'
 import { getProductionPart, matchesProductionWorkArea } from '../../data/productionLines'
 import {
   isBoxCompletedAfterShiftTotal,
@@ -36,6 +38,7 @@ const typeTabs = [
 
 export function ProductionResultsPage() {
   const { activeLine, activeWorkArea } = useAuth()
+  const { t, formatDate } = usePreferences()
   const [type, setType] = useState('all')
   const [search, setSearch] = useState('')
   const { completed } = useQueue()
@@ -60,7 +63,7 @@ export function ProductionResultsPage() {
       })
       .catch((error) => {
         if (!active) return
-        const message = error instanceof Error ? error.message : 'Data hasil produksi gagal dimuat.'
+        const message = describeApiError(error, 'Data hasil produksi gagal dimuat.')
         setShiftTotalState((current) => ({ ...current, error: message, loading: false }))
         setNgState((current) => ({ ...current, error: message, loading: false }))
       })
@@ -169,6 +172,45 @@ export function ProductionResultsPage() {
   const totalOutput = totalOk + totalNg
   const yieldRate = (totalOk / Math.max(totalOutput, 1)) * 100
 
+  const exportCsv = () => {
+    const escape = (value: string | number | undefined) => `"${String(value ?? '').replace(/"/g, '""')}"`
+    const header = [
+      t('Part Number', 'Part Number'),
+      t('Jenis', 'Type'),
+      t('Line', 'Line'),
+      t('Shift', 'Shift'),
+      'OK',
+      'NG',
+      'Yield',
+      t('Operator', 'Operator'),
+      t('Waktu', 'Time'),
+      t('Tanggal', 'Date'),
+    ]
+    const lines = [
+      header,
+      ...rows.map((row) => [
+        row.partNumber,
+        row.type,
+        row.line,
+        row.shift,
+        row.ok,
+        row.ng,
+        `${((row.ok / Math.max(row.ok + row.ng, 1)) * 100).toFixed(2)}%`,
+        row.operator,
+        row.time,
+        row.date,
+      ]),
+    ].map((cells) => cells.map(escape).join(','))
+    const url = URL.createObjectURL(
+      new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' }),
+    )
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `hasil-produksi-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   const columns: Column<ProductionResult>[] = [
     {
       key: 'part',
@@ -227,12 +269,7 @@ export function ProductionResultsPage() {
         meta={
           <>
             <span className="page-meta__item">
-              <CalendarDays size={12} />{' '}
-              {new Date().toLocaleDateString('id-ID', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })}
+              <CalendarDays size={12} /> {formatDate(new Date())}
             </span>
             <span className="page-meta__item">
               <PackageCheck size={12} /> {results.length} transaksi
@@ -240,8 +277,8 @@ export function ProductionResultsPage() {
           </>
         }
         actions={
-          <Button variant="primary" leftIcon={<Download size={15} />}>
-            Export hasil
+          <Button variant="primary" leftIcon={<Download size={15} />} onClick={exportCsv}>
+            {t('Export hasil', 'Export results')}
           </Button>
         }
       />
@@ -274,8 +311,7 @@ export function ProductionResultsPage() {
           value={formatPercent(yieldRate, 2)}
           icon={Target}
           tone="sky"
-          trend={{ label: '+0,4%', direction: 'up' }}
-          note="vs shift sebelumnya"
+          note={t('OK / (OK + NG) dari database', 'OK / (OK + NG) from database')}
         />
         <StatCard
           label="Total output"

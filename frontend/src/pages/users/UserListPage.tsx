@@ -18,6 +18,7 @@ import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { roleLabels } from '../../data/accounts'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { describeApiError } from '../../lib/api'
 import {
   createUser,
@@ -98,6 +99,7 @@ function formatLastLogin(value: string | null): string {
 }
 
 export function UserListPage() {
+  const { confirm } = useConfirmation()
   const [users, setUsers] = useState<MasterUser[]>([])
   const [roles, setRoles] = useState<RoleOption[]>([])
   const [parts, setParts] = useState<ProductionPartRecord[]>([])
@@ -311,7 +313,12 @@ export function UserListPage() {
     const nextStatus: UserStatus = user.status === 'active' ? 'inactive' : 'active'
     if (
       nextStatus === 'inactive' &&
-      !window.confirm(`Nonaktifkan akun ${user.name} (${user.employeeId})?`)
+      !(await confirm({
+        title: 'Nonaktifkan akun?',
+        message: `Nonaktifkan akun ${user.name} (${user.employeeId})?`,
+        confirmLabel: 'Nonaktifkan',
+        tone: 'danger',
+      }))
     ) {
       return
     }
@@ -338,9 +345,12 @@ export function UserListPage() {
       return
     }
     if (
-      !window.confirm(
-        `Hapus akun ${user.name} (${user.employeeId})? Data yang sudah memiliki transaksi produksi tidak dapat dihapus.`,
-      )
+      !(await confirm({
+        title: 'Hapus akun?',
+        message: `Hapus akun ${user.name} (${user.employeeId})? Data yang sudah memiliki transaksi produksi tidak dapat dihapus.`,
+        confirmLabel: 'Hapus akun',
+        tone: 'danger',
+      }))
     ) {
       return
     }

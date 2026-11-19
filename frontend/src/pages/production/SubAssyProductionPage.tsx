@@ -12,26 +12,49 @@ import { Callout } from '../../components/ui/Callout'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SectionCard } from '../../components/ui/SectionCard'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { getProductionDateForShift, getShiftNumberAt } from '../../data/productionPlanning'
+import { describeApiError } from '../../lib/api'
+import { listParts, type ProductionPartRecord } from '../../lib/masterApi'
 import { loadShiftResults, saveNgResult, saveShiftResult } from '../../lib/productionApi'
-import { getProductionParts } from '../../data/productionLines'
-
-const subAssyParts = getProductionParts('Sub Assy')
 
 export function SubAssyProductionPage() {
   const navigate = useNavigate()
   const { user, activeLine, activeWorkArea } = useAuth()
+  const { t } = usePreferences()
   const productionLine = user?.productionLine ??
     (activeLine === 'Robot H' ? 'Robot H' : 'Robot G')
+  const [parts, setParts] = useState<ProductionPartRecord[]>([])
+  const [partLoading, setPartLoading] = useState(true)
+  const [partError, setPartError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    listParts({ type: 'Sub_Assy', line: productionLine })
+      .then((records) => {
+        if (!active) return
+        setParts(records)
+        setPartError('')
+      })
+      .catch((error) => {
+        if (active) setPartError(describeApiError(error, 'Master part Sub Assy gagal dimuat.'))
+      })
+      .finally(() => {
+        if (active) setPartLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [productionLine])
+
   const availableParts = useMemo(
     () =>
-      subAssyParts.filter(
+      parts.filter(
         (part) =>
-          part.line === productionLine &&
-          (!activeWorkArea ||
-            (activeWorkArea.type === 'Sub Assy' && part.process === activeWorkArea.process)),
+          !activeWorkArea ||
+          (activeWorkArea.type === 'Sub Assy' && part.process === activeWorkArea.process),
       ),
-    [productionLine, activeWorkArea?.type, activeWorkArea?.process],
+    [parts, activeWorkArea?.type, activeWorkArea?.process],
   )
   const activeShift = getShiftNumberAt()
   const [partNumber, setPartNumber] = useState(
@@ -72,7 +95,7 @@ export function SubAssyProductionPage() {
       })
       .catch((error) => {
         if (active) {
-          setRecordError(error instanceof Error ? error.message : 'Data hasil shift gagal dibaca.')
+          setRecordError(describeApiError(error, 'Data hasil shift gagal dibaca.'))
         }
       })
     return () => {
@@ -115,7 +138,7 @@ export function SubAssyProductionPage() {
       ])
       setMessage(`Total shift tersimpan: ${ok} OK dan ${ng} NG untuk ${partNumber}, Shift ${activeShift}.`)
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Hasil shift gagal disimpan.')
+      setMessage(describeApiError(error, 'Hasil shift gagal disimpan.'))
     }
   }
 
@@ -128,10 +151,22 @@ export function SubAssyProductionPage() {
           subtitle={`Belum ada part Sub Assy yang terdaftar untuk ${productionLine}.`}
           meta={<span className="page-meta__item"><Cog size={12} /> {productionLine} — Sub Assy</span>}
         />
-        <Callout tone="warning" title="Master part belum tersedia">
-          Daftarkan part Sub Assy dan line prosesnya di Master Data sebelum memulai produksi pada
-          line ini.
-        </Callout>
+        {partLoading && (
+          <Callout tone="info">
+            {t('Memuat master part Sub Assy dari database…', 'Loading Sub Assy master parts from the database...')}
+          </Callout>
+        )}
+        {partError && (
+          <Callout tone="danger" title={t('Master part gagal dimuat', 'Master parts failed to load')}>
+            {partError}
+          </Callout>
+        )}
+        {!partLoading && !partError && (
+          <Callout tone="warning" title="Master part belum tersedia">
+            Daftarkan part Sub Assy dan line prosesnya di Master Data sebelum memulai produksi pada
+            line ini.
+          </Callout>
+        )}
       </div>
     )
   }
@@ -164,6 +199,11 @@ export function SubAssyProductionPage() {
         }
       />
 
+      {partError && (
+        <Callout tone="danger" title={t('Master part gagal dimuat', 'Master parts failed to load')}>
+          {partError}
+        </Callout>
+      )}
       {message && <Callout tone={message.includes('tersimpan') ? 'success' : 'warning'}>{message}</Callout>}
       {recordError && <Callout tone="danger" title="Hasil shift gagal dibaca">{recordError}</Callout>}
 
@@ -247,12 +287,12 @@ export function SubAssyProductionPage() {
                 <span className="info-value info-value--strong">{selectedPart?.packaging ?? '—'} pcs / box</span>
               </div>
               <div className="info-item">
-                <span className="info-label">Kanban berikutnya</span>
-                <span className="info-value info-value--strong">SK-2611-042</span>
+                <span className="info-label">Status master</span>
+                <span className="info-value info-value--strong">{selectedPart?.status ?? '—'}</span>
               </div>
               <div className="info-item">
-                <span className="info-label">Mesin aktif</span>
-                <span className="info-value">Machine B</span>
+                <span className="info-label">Line</span>
+                <span className="info-value">{selectedPart?.line ?? '—'}</span>
               </div>
               <div className="info-item">
                 <span className="info-label">Operator</span>
@@ -307,7 +347,10 @@ export function SubAssyProductionPage() {
             </div>
 
             <Callout tone="info" className="callout" style={{ marginTop: 12 }}>
-              PN Sub Assy mengikuti mapping Master Data → Part Number.
+              {t(
+                'PN Sub Assy diambil langsung dari Master Data → Part Number di database.',
+                'Sub Assy part numbers come directly from Master Data → Part Number in the database.',
+              )}
             </Callout>
           </SectionCard>
 
@@ -326,7 +369,10 @@ export function SubAssyProductionPage() {
               ))}
             </div>
             <Callout tone="info" className="callout" style={{ marginTop: 12 }}>
-              Line proses diambil dari komposisi pilot Robot G. Qty OK berasal dari Kanban yang diselesaikan.
+              {t(
+                'Line proses diambil dari Master Data. Qty OK berasal dari Kanban yang diselesaikan.',
+                'Process lines come from Master Data. OK qty comes from completed kanban.',
+              )}
             </Callout>
           </SectionCard>
         </div>

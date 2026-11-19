@@ -8,12 +8,14 @@ import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { useAuth } from '../../contexts/AuthContext'
 import { useConfirmation } from '../../contexts/ConfirmationContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { roleLabels } from '../../data/accounts'
 import { describeApiError } from '../../lib/api'
 
 export function ProfilePage() {
   const { user, updateProfile, hasRole } = useAuth()
   const { confirm } = useConfirmation()
+  const { t } = usePreferences()
   const canEdit = hasRole('admin')
   const [name, setName] = useState(user?.name ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
@@ -42,13 +44,13 @@ export function ProfilePage() {
     event.preventDefault()
     if (!canEdit) return
     if (!name.trim()) {
-      setSubmitError('Nama lengkap wajib diisi.')
+      setSubmitError(t('Nama lengkap wajib diisi.', 'Full name is required.'))
       return
     }
     const confirmed = await confirm({
-      title: 'Simpan perubahan profil?',
-      message: 'Nama, email, dan nomor telepon akan diperbarui pada database akun Anda.',
-      confirmLabel: 'Simpan perubahan',
+      title: t('Simpan perubahan profil?', 'Save profile changes?'),
+      message: t('Nama, email, dan nomor telepon akan diperbarui pada database akun Anda.', 'Name, email, and phone number will be updated in your account database.'),
+      confirmLabel: t('Simpan perubahan', 'Save changes'),
     })
     if (!confirmed) return
 
@@ -61,10 +63,10 @@ export function ProfilePage() {
         email: email.trim() || null,
         phone: phone.trim() || null,
       })
-      setMessage('Profil berhasil disimpan ke database.')
+      setMessage(t('Profil berhasil disimpan ke database.', 'Profile saved to the database.'))
       window.setTimeout(() => setMessage(''), 4000)
     } catch (saveError) {
-      setSubmitError(describeApiError(saveError, 'Profil gagal disimpan.'))
+      setSubmitError(describeApiError(saveError, t('Profil gagal disimpan.', 'Failed to save profile.')))
     } finally {
       setSaving(false)
     }
@@ -73,23 +75,23 @@ export function ProfilePage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Settings"
-        title="My Profile"
-        subtitle="Informasi akun yang digunakan pada seluruh aktivitas produksi, material, dan inventory."
+        eyebrow={t('Pengaturan', 'Settings')}
+        title={t('Profil Saya', 'My Profile')}
+        subtitle={t('Informasi akun yang digunakan pada seluruh aktivitas produksi, material, dan inventory.', 'Account information used across production, material, and inventory activities.')}
         meta={
           <>
             <span className="page-meta__item">
-              <ShieldCheck size={12} /> Tersinkron dengan database
+              <ShieldCheck size={12} /> {t('Tersinkron dengan database', 'Synced with the database')}
             </span>
             <span className="page-meta__item">
               {canEdit ? <Pencil size={12} /> : <Lock size={12} />}
-              {canEdit ? 'Dapat diedit' : 'Hanya baca'}
+              {canEdit ? t('Dapat diedit', 'Editable') : t('Hanya baca', 'Read-only')}
             </span>
           </>
         }
       />
 
-      {submitError && <Callout tone="danger" title="Profil gagal disimpan">{submitError}</Callout>}
+      {submitError && <Callout tone="danger" title={t('Profil gagal disimpan', 'Failed to save profile')}>{submitError}</Callout>}
       {message && <Callout tone="success">{message}</Callout>}
 
       <section className="card profile-banner">
@@ -105,7 +107,7 @@ export function ProfilePage() {
               <Building2 size={11} /> {user.line}
             </span>
             <Badge tone={user.status === 'active' ? 'success' : 'neutral'} dot>
-              {user.status === 'active' ? 'Active' : 'Inactive'}
+              {user.status === 'active' ? t('Aktif', 'Active') : t('Nonaktif', 'Inactive')}
             </Badge>
           </div>
         </div>
@@ -114,20 +116,19 @@ export function ProfilePage() {
       <div className="report-split">
         <section className="card settings-card">
           <div className="settings-card__head">
-            <h3>Informasi pribadi</h3>
-            <p>Data profil tersimpan pada akun Anda di database.</p>
+            <h3>{t('Informasi pribadi', 'Personal information')}</h3>
+            <p>{t('Data profil tersimpan pada akun Anda di database.', 'Profile data is stored in your account in the database.')}</p>
           </div>
 
           {!canEdit && (
             <Callout tone="info">
-              Profil hanya dapat diubah oleh akun dengan role Admin. Hubungi Admin bila ada data
-              yang perlu diperbarui.
+              {t('Profil hanya dapat diubah oleh akun dengan role Admin. Hubungi Admin bila ada data yang perlu diperbarui.', 'Profiles can only be changed by an Admin account. Contact an Admin if data needs updating.')}
             </Callout>
           )}
 
           <form onSubmit={saveProfile}>
             <div className="form-grid">
-              <Field label="Nama lengkap" htmlFor="profile-name">
+              <Field label={t('Nama lengkap', 'Full name')} htmlFor="profile-name">
                 <input
                   id="profile-name"
                   className="input"
@@ -137,7 +138,7 @@ export function ProfilePage() {
                   required
                 />
               </Field>
-              <Field label="Email" htmlFor="profile-email">
+              <Field label={t('Email', 'Email')} htmlFor="profile-email">
                 <input
                   id="profile-email"
                   type="email"
@@ -147,7 +148,7 @@ export function ProfilePage() {
                   readOnly={!canEdit}
                 />
               </Field>
-              <Field label="Nomor telepon" htmlFor="profile-phone">
+              <Field label={t('Nomor telepon', 'Phone number')} htmlFor="profile-phone">
                 <input
                   id="profile-phone"
                   type="tel"
@@ -157,13 +158,13 @@ export function ProfilePage() {
                   readOnly={!canEdit}
                 />
               </Field>
-              <Field label="Employee ID" htmlFor="profile-employee">
+              <Field label={t('Employee ID', 'Employee ID')} htmlFor="profile-employee">
                 <input id="profile-employee" className="input" value={user.employeeId} readOnly />
               </Field>
-              <Field label="Area kerja" htmlFor="profile-area">
+              <Field label={t('Area kerja', 'Work area')} htmlFor="profile-area">
                 <input id="profile-area" className="input" value={user.area} readOnly />
               </Field>
-              <Field label="Line" htmlFor="profile-line">
+              <Field label={t('Line', 'Line')} htmlFor="profile-line">
                 <input id="profile-line" className="input" value={user.line} readOnly />
               </Field>
             </div>
@@ -171,10 +172,10 @@ export function ProfilePage() {
             {canEdit && (
               <div className="form-actions">
                 <Button type="button" variant="secondary" onClick={resetForm} disabled={saving}>
-                  Batalkan
+                  {t('Batalkan', 'Cancel')}
                 </Button>
                 <Button type="submit" variant="primary" leftIcon={<Save size={15} />} loading={saving}>
-                  Simpan perubahan
+                  {t('Simpan perubahan', 'Save changes')}
                 </Button>
               </div>
             )}
@@ -184,34 +185,34 @@ export function ProfilePage() {
         <div style={{ display: 'grid', gap: 16 }}>
           <section className="card settings-card">
             <div className="settings-card__head">
-              <h3>Informasi akun</h3>
-              <p>Detail role dan akses</p>
+              <h3>{t('Informasi akun', 'Account information')}</h3>
+              <p>{t('Detail role dan akses', 'Role and access details')}</p>
             </div>
             <div className="info-grid">
               <div className="info-item">
-                <span className="info-label">Username</span>
+                <span className="info-label">{t('Username', 'Username')}</span>
                 <span className="info-value mono">{user.username}</span>
               </div>
               <div className="info-item">
-                <span className="info-label">Role</span>
+                <span className="info-label">{t('Role', 'Role')}</span>
                 <span className="info-value">
                   <Badge tone="orange">{roleLabels[user.role]}</Badge>
                 </span>
               </div>
               <div className="info-item">
-                <span className="info-label">Status</span>
+                <span className="info-label">{t('Status', 'Status')}</span>
                 <span className="info-value">
                   <Badge tone={user.status === 'active' ? 'success' : 'neutral'} dot>
-                    {user.status === 'active' ? 'Active' : 'Inactive'}
+                    {user.status === 'active' ? t('Aktif', 'Active') : t('Nonaktif', 'Inactive')}
                   </Badge>
                 </span>
               </div>
               <div className="info-item">
-                <span className="info-label">Pengaturan shift</span>
+                <span className="info-label">{t('Pengaturan shift', 'Shift setting')}</span>
                 <span className="info-value">
                   {user.shiftMode === 'rotating'
-                    ? `Rotasi mingguan · ${user.currentShift ? `Shift ${user.currentShift}` : 'Belum aktif'}`
-                    : 'Non-shift'}
+                    ? t(`Rotasi mingguan · ${user.currentShift ? `Shift ${user.currentShift}` : 'Belum aktif'}`, `Weekly rotation · ${user.currentShift ? `Shift ${user.currentShift}` : 'Not active'}`)
+                    : t('Non-shift', 'Non-shift')}
                 </span>
               </div>
             </div>
@@ -219,8 +220,8 @@ export function ProfilePage() {
 
           <section className="card settings-card">
             <div className="settings-card__head">
-              <h3>Kontak</h3>
-              <p>Kanal komunikasi terkait akun</p>
+              <h3>{t('Kontak', 'Contact')}</h3>
+              <p>{t('Kanal komunikasi terkait akun', 'Account communication channels')}</p>
             </div>
             <div className="movement-list">
               <div className="movement">
@@ -228,8 +229,8 @@ export function ProfilePage() {
                   <Mail size={14} />
                 </span>
                 <div className="movement__copy">
-                  <strong>Email</strong>
-                  <span>{email || 'Belum diisi'}</span>
+                  <strong>{t('Email', 'Email')}</strong>
+                  <span>{email || t('Belum diisi', 'Not filled in')}</span>
                 </div>
               </div>
               <div className="movement">
@@ -237,8 +238,8 @@ export function ProfilePage() {
                   <Phone size={14} />
                 </span>
                 <div className="movement__copy">
-                  <strong>Telepon</strong>
-                  <span>{phone || 'Belum diisi'}</span>
+                  <strong>{t('Telepon', 'Phone')}</strong>
+                  <span>{phone || t('Belum diisi', 'Not filled in')}</span>
                 </div>
               </div>
               <div className="movement">
@@ -246,7 +247,7 @@ export function ProfilePage() {
                   <MapPin size={14} />
                 </span>
                 <div className="movement__copy">
-                  <strong>Lokasi kerja</strong>
+                  <strong>{t('Lokasi kerja', 'Work location')}</strong>
                   <span>{user.line} · {user.area}</span>
                 </div>
               </div>

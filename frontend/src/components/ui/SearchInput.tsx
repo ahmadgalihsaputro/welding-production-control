@@ -1,4 +1,5 @@
 import { Search, X } from 'lucide-react'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { cn } from '../../lib/utils'
 
 interface SearchInputProps {
@@ -12,10 +13,11 @@ interface SearchInputProps {
 export function SearchInput({
   value,
   onChange,
-  placeholder = 'Cari…',
+  placeholder,
   className,
   id,
 }: SearchInputProps) {
+  const { t } = usePreferences()
   return (
     <div className={cn('input-wrap', className)}>
       <Search size={15} className="input-wrap__icon" />
@@ -24,7 +26,7 @@ export function SearchInput({
         type="search"
         className={cn('input', value && 'has-action')}
         value={value}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t('Cari…', 'Search…')}
         onChange={(event) => onChange(event.target.value)}
       />
       {value && (
@@ -32,7 +34,7 @@ export function SearchInput({
           type="button"
           className="input-wrap__action"
           onClick={() => onChange('')}
-          aria-label="Hapus pencarian"
+          aria-label={t('Hapus pencarian', 'Clear search')}
         >
           <X size={14} />
         </button>

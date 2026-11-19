@@ -15,14 +15,20 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { useTheme } from '../../contexts/ThemeContext'
 import { ConnectionIndicator } from './ConnectionIndicator'
-import { notifications } from '../../data/mock'
-import { findGroupByPath, findLeafByPath, visibleNavigation } from '../../data/navigation'
+import {
+  findGroupByPath,
+  findLeafByPath,
+  navigationEn,
+  visibleNavigation,
+} from '../../data/navigation'
 import { useClickOutside } from '../../hooks/useClickOutside'
+import { getStockAlerts, type StockAlert } from '../../lib/notificationApi'
 import { cn } from '../../lib/utils'
 import { WeldingIcon } from '../brand/Logo'
 import { Avatar } from '../ui/Avatar'
@@ -65,6 +71,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
     setActiveWorkArea,
   } = useAuth()
   const { theme, toggleTheme } = useTheme()
+  const { t, formatTime } = usePreferences()
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -74,7 +81,15 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
   const [notifOpen, setNotifOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const [lineOpen, setLineOpen] = useState(false)
-  const [readAll, setReadAll] = useState(false)
+  const [alerts, setAlerts] = useState<StockAlert[]>([])
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('wpc.notifications.read.v1')
+      return new Set<string>(raw ? JSON.parse(raw) : [])
+    } catch {
+      return new Set<string>()
+    }
+  })
   const canChooseLine = user?.role === 'admin'
   const canChooseWorkArea =
     user?.role === 'operator_assy' ||
@@ -93,26 +108,57 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
   useClickOutside(userRef, () => setUserOpen(false), userOpen)
   useClickOutside(lineRef, () => setLineOpen(false), lineOpen)
 
+  useEffect(() => {
+    let active = true
+    const loadAlerts = () => {
+      getStockAlerts()
+        .then((result) => {
+          if (active) setAlerts(result.alerts)
+        })
+        .catch(() => {
+          if (active) setAlerts([])
+        })
+    }
+    loadAlerts()
+    const timer = window.setInterval(loadAlerts, 60_000)
+    window.addEventListener('wpc:notifications-updated', loadAlerts)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+      window.removeEventListener('wpc:notifications-updated', loadAlerts)
+    }
+  }, [])
+
   const group = findGroupByPath(location.pathname)
   const leaf = findLeafByPath(location.pathname)
-  const unread = readAll ? 0 : notifications.filter((item) => item.unread).length
+  const readKey = (alert: StockAlert) => `${alert.id}:${alert.time}`
+  const unread = alerts.filter((alert) => !readIds.has(readKey(alert))).length
+
+  const markAllRead = () => {
+    const next = new Set([...readIds, ...alerts.map(readKey)])
+    localStorage.setItem('wpc.notifications.read.v1', JSON.stringify([...next]))
+    setReadIds(next)
+  }
+
+  const alertTime = (value: string) => formatTime(value)
 
   const searchResults = useMemo(() => {
     if (!user || query.trim().length < 1) return []
     const needle = query.toLowerCase()
     return visibleNavigation(user.role)
-      .flatMap((navGroup) =>
-        navGroup.path
-          ? [{ label: navGroup.label, path: navGroup.path, group: 'Workspace' }]
+      .flatMap((navGroup) => {
+        const groupLabel = t(navGroup.label, navigationEn[navGroup.label] ?? navGroup.label)
+        return navGroup.path
+          ? [{ label: groupLabel, path: navGroup.path, group: t('Workspace', 'Workspace') }]
           : (navGroup.items ?? []).map((item) => ({
-              label: item.label,
+              label: t(item.label, navigationEn[item.label] ?? item.label),
               path: item.path,
-              group: navGroup.label,
-            })),
-      )
+              group: groupLabel,
+            }))
+      })
       .filter((item) => item.label.toLowerCase().includes(needle))
       .slice(0, 6)
-  }, [query, user])
+  }, [query, user, t])
 
   const handleSearchSubmit = () => {
     if (searchResults.length > 0) {
@@ -147,7 +193,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
           type="button"
           className="btn-icon hamburger"
           onClick={onMenuClick}
-          aria-label={isMobile ? 'Buka menu' : 'Buka atau tutup sidebar'}
+          aria-label={isMobile ? t('Buka menu', 'Open menu') : t('Buka atau tutup sidebar', 'Open or close sidebar')}
         >
           <Menu size={19} />
         </button>
@@ -160,9 +206,17 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
         </div>
 
         <div className="topbar__title">
-          <span className="topbar__eyebrow">{group?.label ?? 'Workspace'}</span>
+          <span className="topbar__eyebrow">
+            {group ? t(group.label, navigationEn[group.label] ?? group.label) : t('Workspace', 'Workspace')}
+          </span>
           <span className="topbar__page">
-            {leaf?.label ?? (location.pathname === '/' ? 'Overview' : group?.label ?? 'WPC')}
+            {leaf
+              ? t(leaf.label, navigationEn[leaf.label] ?? leaf.label)
+              : location.pathname === '/'
+                ? t('Overview', 'Overview')
+                : group
+                  ? t(group.label, navigationEn[group.label] ?? group.label)
+                  : 'WPC'}
           </span>
         </div>
 
@@ -172,7 +226,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
             ref={searchInputRef}
             className="input"
             type="search"
-            placeholder="Cari menu, PN, Kanban…"
+            placeholder={t('Cari menu, PN, Kanban…', 'Search menu, PN, Kanban…')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onFocus={() => setSearchFocused(true)}
@@ -185,20 +239,24 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
                 setSearchOpen(false)
               }
             }}
-            aria-label="Pencarian global"
+            aria-label={t('Pencarian global', 'Global search')}
           />
           <span className="kbd">⌘K</span>
 
           {searchFocused && query.length > 0 && (
             <div className="search-results popover">
               <div className="popover-head">
-                <span className="popover-title">Hasil pencarian</span>
-                <span className="popover-sub">{searchResults.length} menu</span>
+                <span className="popover-title">{t('Hasil pencarian', 'Search results')}</span>
+                <span className="popover-sub">
+                  {searchResults.length} {t('menu', 'menu')}
+                </span>
               </div>
               <div className="popover-list">
                 {searchResults.length === 0 ? (
                   <div className="empty-state" style={{ padding: '20px 12px' }}>
-                    <p>Tidak ada menu yang cocok dengan “{query}”.</p>
+                    <p>
+                      {t('Tidak ada menu yang cocok dengan', 'No menu matches')} “{query}”.
+                    </p>
                   </div>
                 ) : (
                   searchResults.map((result) => (
@@ -241,25 +299,39 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
             }}
             aria-expanded={canChooseLine || canChooseWorkArea ? lineOpen : undefined}
             aria-disabled={!canChooseLine && !canChooseWorkArea}
-            aria-label="Pilih line atau robot"
+            aria-label={t('Pilih line atau robot', 'Select line or robot')}
           >
             <span className="line-dot" />
             <span>
-              <small>{canChooseLine ? 'Filter line' : canChooseWorkArea ? 'Area kerja' : 'Line'}</small> {lineLabel}
+              <small>
+                {canChooseLine
+                  ? t('Filter line', 'Filter line')
+                  : canChooseWorkArea
+                    ? t('Area kerja', 'Work area')
+                    : t('Line', 'Line')}
+              </small>{' '}
+              {lineLabel === 'All lines' ? t('All lines', 'All lines') : lineLabel}
             </span>
             {(canChooseLine || canChooseWorkArea) && <ChevronDown size={13} />}
           </button>
           {(canChooseLine || canChooseWorkArea) && lineOpen && (
             <div className="menu">
               <div className="menu-user">
-                <strong>{canChooseLine ? 'Filter line' : 'Pindah area kerja'}</strong>
-                <span>{canChooseLine ? 'Filter data line produksi' : 'Pilih area yang sedang dikerjakan'}</span>
+                <strong>
+                  {canChooseLine ? t('Filter line', 'Filter line') : t('Pindah area kerja', 'Switch work area')}
+                </strong>
+                <span>
+                  {canChooseLine
+                    ? t('Filter data line produksi', 'Filter production line data')
+                    : t('Pilih area yang sedang dikerjakan', 'Select the area currently in progress')}
+                </span>
               </div>
               {(canChooseLine ? lines : workAreas).map((item) => {
                 const isAllLines = item === 'all'
-                const label = typeof item === 'string'
+                const rawLabel = typeof item === 'string'
                   ? item === 'all' ? 'All lines' : item
                   : item.label
+                const label = rawLabel === 'All lines' ? t('All lines', 'All lines') : rawLabel
                 const key = typeof item === 'string' ? item : item.id
                 return (
                 <button
@@ -295,10 +367,14 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
           type="button"
           className="btn-icon topbar-search-toggle"
           onClick={toggleSearch}
-          aria-label={searchOpen ? 'Tutup pencarian global' : 'Buka pencarian global'}
+          aria-label={
+            searchOpen
+              ? t('Tutup pencarian global', 'Close global search')
+              : t('Buka pencarian global', 'Open global search')
+          }
           aria-expanded={searchOpen}
           aria-controls="topbar-search"
-          title={searchOpen ? 'Tutup pencarian' : 'Cari'}
+          title={searchOpen ? t('Tutup pencarian', 'Close search') : t('Cari', 'Search')}
         >
           {searchOpen ? <X size={18} /> : <Search size={18} />}
         </button>
@@ -307,7 +383,11 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
           type="button"
           className="btn-icon theme-toggle"
           onClick={toggleTheme}
-          aria-label={theme === 'dark' ? 'Aktifkan light mode' : 'Aktifkan dark mode'}
+          aria-label={
+            theme === 'dark'
+              ? t('Aktifkan light mode', 'Enable light mode')
+              : t('Aktifkan dark mode', 'Enable dark mode')
+          }
           title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
@@ -324,7 +404,11 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
               setUserOpen(false)
               setLineOpen(false)
             }}
-            aria-label={`Notifikasi${unread > 0 ? `, ${unread} belum dibaca` : ''}`}
+            aria-label={
+              unread > 0
+                ? t(`Notifikasi, ${unread} belum dibaca`, `Notifications, ${unread} unread`)
+                : t('Notifikasi', 'Notifications')
+            }
             aria-expanded={notifOpen}
           >
             <Bell size={18} />
@@ -335,43 +419,50 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
             <div className="popover">
               <div className="popover-head">
                 <div>
-                  <div className="popover-title">Notifikasi</div>
-                  <div className="popover-sub">{unread} belum dibaca</div>
+                  <div className="popover-title">{t('Notifikasi', 'Notifications')}</div>
+                  <div className="popover-sub">{unread} {t('belum dibaca', 'unread')}</div>
                 </div>
                 <button
                   type="button"
                   className="btn-icon"
                   style={{ width: 30, height: 30, borderRadius: 9 }}
-                  onClick={() => setReadAll(true)}
-                  aria-label="Tandai semua sudah dibaca"
+                  onClick={markAllRead}
+                  aria-label={t('Tandai semua sudah dibaca', 'Mark all as read')}
                 >
                   <CheckCheck size={15} />
                 </button>
               </div>
               <div className="popover-list">
-                {notifications.map((item) => {
-                  const Icon = notificationIcon[item.tone] ?? Info
-                  return (
-                    <div
-                      className={cn('notification', !readAll && item.unread && 'is-unread')}
-                      key={item.id}
-                    >
+                {alerts.length === 0 ? (
+                  <div className="empty-state" style={{ padding: '20px 12px' }}>
+                    <p>{t('Tidak ada notifikasi stok saat ini.', 'No stock notifications right now.')}</p>
+                  </div>
+                ) : (
+                  alerts.map((item) => {
+                    const Icon = notificationIcon[item.tone] ?? Info
+                    const isUnread = !readIds.has(readKey(item))
+                    return (
                       <div
-                        className={`notification__icon stat-icon--${
-                          toneToStat[item.tone] ?? 'sky'
-                        }`}
+                        className={cn('notification', isUnread && 'is-unread')}
+                        key={item.id}
                       >
-                        <Icon size={15} />
+                        <div
+                          className={`notification__icon stat-icon--${
+                            toneToStat[item.tone] ?? 'sky'
+                          }`}
+                        >
+                          <Icon size={15} />
+                        </div>
+                        <div className="notification__body">
+                          <span className="notification__title">{item.title}</span>
+                          <span className="notification__text">{item.body}</span>
+                          <span className="notification__time">{alertTime(item.time)}</span>
+                        </div>
+                        {isUnread && <span className="notification__unread-dot" />}
                       </div>
-                      <div className="notification__body">
-                        <span className="notification__title">{item.title}</span>
-                        <span className="notification__text">{item.body}</span>
-                        <span className="notification__time">{item.time}</span>
-                      </div>
-                      {!readAll && item.unread && <span className="notification__unread-dot" />}
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
               </div>
               <div className="popover-footer">
                 <Link
@@ -379,7 +470,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
                   className="btn btn-ghost btn-sm btn-block"
                   onClick={() => setNotifOpen(false)}
                 >
-                  Pengaturan notifikasi
+                  {t('Pengaturan notifikasi', 'Notification settings')}
                 </Link>
               </div>
             </div>
@@ -398,7 +489,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
               setLineOpen(false)
             }}
             aria-expanded={userOpen}
-            aria-label="Menu akun"
+            aria-label={t('Menu akun', 'Account menu')}
           >
             <Avatar
               initials={user?.initials ?? 'WPC'}
@@ -425,7 +516,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
                 onClick={() => setUserOpen(false)}
               >
                 <UserRound size={15} />
-                My Profile
+                {t('Profil Saya', 'My Profile')}
               </Link>
               <Link
                 to="/settings/preferences"
@@ -433,7 +524,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
                 onClick={() => setUserOpen(false)}
               >
                 <Settings2 size={15} />
-                Preferences
+                {t('Preferensi', 'Preferences')}
               </Link>
               <div className="menu-divider" />
               <button
@@ -442,7 +533,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
                 onClick={handleLogout}
               >
                 <LogOut size={15} />
-                Logout
+                {t('Logout', 'Logout')}
               </button>
             </div>
           )}

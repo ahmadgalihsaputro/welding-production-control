@@ -9,6 +9,8 @@ import {
   type ReactNode,
 } from 'react'
 import { useAuth } from './AuthContext'
+import { usePreferences } from './PreferencesContext'
+import { describeApiError } from '../lib/api'
 import {
   allocateProductionRequest,
   loadProductionState,
@@ -108,6 +110,7 @@ const QueueContext = createContext<QueueContextValue | null>(null)
 
 export function QueueProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
+  const { t } = usePreferences()
   const [state, setState] = useState<QueueState>(initialState)
   const itemsRef = useRef<QueueItem[]>([])
 
@@ -128,10 +131,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       setState((current) => ({
         ...current,
         loading: false,
-        error: error instanceof Error ? error.message : 'Data produksi gagal dimuat.',
+        error: describeApiError(error, t('Data produksi gagal dimuat.', 'Production data failed to load.')),
       }))
     }
-  }, [user])
+  }, [user, t])
 
   useEffect(() => {
     if (!user) {
@@ -163,11 +166,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Kanban gagal masuk antrian.',
+          error: describeApiError(error, t('Kanban gagal masuk antrian.', 'Kanban failed to enter the queue.')),
         }
       }
     },
-    [refresh],
+    [refresh, t],
   )
 
   const allocateRequest = useCallback(
@@ -187,11 +190,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Permintaan gagal dialokasikan.',
+          error: describeApiError(error, t('Permintaan gagal dialokasikan.', 'Request failed to allocate.')),
         }
       }
     },
-    [],
+    [t],
   )
 
   const printKanban = useCallback(
@@ -234,11 +237,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         return {
           ok: false,
-          error: error instanceof Error ? error.message : 'Kanban gagal dicetak.',
+          error: describeApiError(error, t('Kanban gagal dicetak.', 'Kanban failed to print.')),
         }
       }
     },
-    [refresh],
+    [refresh, t],
   )
 
   const moveItem = useCallback(

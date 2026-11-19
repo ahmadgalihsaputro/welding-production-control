@@ -1,99 +1,128 @@
 import { LayoutDashboard, Monitor, Moon, Palette, Save, Sun } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { Toggle } from '../../components/ui/Toggle'
+import { useAuth } from '../../contexts/AuthContext'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { useTheme } from '../../contexts/ThemeContext'
+import {
+  DEFAULT_PREFERENCES,
+  usePreferences,
+  type DateFormat,
+  type Density,
+  type Language,
+  type Preferences,
+  type Timezone,
+} from '../../contexts/PreferencesContext'
+import { canAccess } from '../../config/access'
+import { describeApiError } from '../../lib/api'
 
-interface Preferences {
-  language: string
-  density: string
-  startPage: string
-  sidebarDefault: boolean
-  reduceMotion: boolean
-}
-
-const STORAGE_KEY = 'wpc.preferences.v1'
-const DEFAULT_PREFERENCES: Preferences = {
-  language: 'id',
-  density: 'comfortable',
-  startPage: 'dashboard',
-  sidebarDefault: false,
-  reduceMotion: false,
-}
-
-function loadPreferences(): Preferences {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_PREFERENCES
-    return { ...DEFAULT_PREFERENCES, ...JSON.parse(raw) }
-  } catch {
-    return DEFAULT_PREFERENCES
-  }
-}
+const startPages: Array<{ path: string; id: string; en: string }> = [
+  { path: '/', id: 'Dashboard', en: 'Dashboard' },
+  { path: '/production/schedule', id: 'Jadwal Produksi', en: 'Production Schedule' },
+  { path: '/production/assy-queue', id: 'Antrian Assy', en: 'Assy Queue' },
+  { path: '/production/queue', id: 'Antrian Sub Assy', en: 'Sub Assy Queue' },
+  { path: '/inventory/overview', id: 'Stock Overview', en: 'Stock Overview' },
+  { path: '/settings/profile', id: 'Profil Saya', en: 'My Profile' },
+]
 
 export function PreferencesPage() {
   const { theme, setTheme } = useTheme()
-  const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFERENCES)
+  const { user } = useAuth()
+  const { confirm } = useConfirmation()
+  const { preferences, setPreferences, t, formatDate } = usePreferences()
+  const [draft, setDraft] = useState<Preferences>(preferences)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [showConfirm, setShowConfirm] = useState(false)
-  const [pendingPrefs, setPendingPrefs] = useState<Preferences | null>(null)
 
-  useEffect(() => {
-    setPrefs(loadPreferences())
-  }, [])
+  const dirty = JSON.stringify(draft) !== JSON.stringify(preferences)
+  const allowedStartPages = startPages.filter(
+    (page) => !user || canAccess(page.path, user.role),
+  )
 
-  const requestSave = (nextPrefs: Preferences) => {
-    setPendingPrefs(nextPrefs)
-    setShowConfirm(true)
+  const update = <K extends keyof Preferences>(key: K, value: Preferences[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }))
+    setMessage('')
   }
 
-  const handleConfirm = () => {
-    if (!pendingPrefs) return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingPrefs))
-    setPrefs(pendingPrefs)
-    setPendingPrefs(null)
-    setShowConfirm(false)
-    setMessage('Preferensi berhasil disimpan pada perangkat ini.')
-    setTimeout(() => setMessage(''), 3000)
+  const handleSave = async () => {
+    const confirmed = await confirm({
+      title: t('Simpan preferensi?', 'Save preferences?'),
+      message: t(
+        'Bahasa, format tanggal, zona waktu, density, dan perilaku aplikasi akan diterapkan sekarang.',
+        'Language, date format, time zone, density, and app behaviour will be applied now.',
+      ),
+      confirmLabel: t('Simpan preferensi', 'Save preferences'),
+    })
+    if (!confirmed) return
+    setSaving(true)
+    setError('')
+    try {
+      const saved = await setPreferences(draft)
+      setDraft(saved)
+      setMessage(t('Preferensi berhasil disimpan.', 'Preferences saved.'))
+    } catch (saveError) {
+      setError(describeApiError(saveError, t('Preferensi gagal disimpan.', 'Failed to save preferences.')))
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const handleCancel = () => {
-    setPendingPrefs(null)
-    setShowConfirm(false)
-  }
-
-  const handleReset = () => {
-    localStorage.removeItem(STORAGE_KEY)
-    setPrefs(DEFAULT_PREFERENCES)
-    setMessage('Preferensi direset ke default.')
-    setTimeout(() => setMessage(''), 3000)
+  const handleReset = async () => {
+    const confirmed = await confirm({
+      title: t('Reset preferensi?', 'Reset preferences?'),
+      message: t(
+        'Semua preferensi akan dikembalikan ke pengaturan awal.',
+        'All preferences will be restored to their defaults.',
+      ),
+      confirmLabel: t('Reset default', 'Reset to default'),
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    setSaving(true)
+    setError('')
+    try {
+      const saved = await setPreferences(DEFAULT_PREFERENCES)
+      setDraft(saved)
+      setMessage(t('Preferensi direset ke default.', 'Preferences reset to default.'))
+    } catch (resetError) {
+      setError(describeApiError(resetError, t('Preferensi gagal direset.', 'Failed to reset preferences.')))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Settings"
-        title="Application Preferences"
-        subtitle="Sesuaikan tampilan dan perilaku aplikasi. Preferensi disimpan pada browser perangkat ini."
+        eyebrow={t('Pengaturan', 'Settings')}
+        title={t('Application Preferences', 'Application Preferences')}
+        subtitle={t(
+          'Sesuaikan tampilan, bahasa, format tanggal, dan perilaku aplikasi. Preferensi tersimpan pada akun Anda.',
+          'Adjust the look, language, date format, and behaviour of the app. Preferences are saved to your account.',
+        )}
         meta={
           <span className="page-meta__item">
-            <Palette size={12} /> Tema {theme === 'dark' ? 'gelap' : 'terang'}
+            <Palette size={12} />{' '}
+            {t('Tema', 'Theme')} {theme === 'dark' ? t('gelap', 'dark') : t('terang', 'light')}
           </span>
         }
       />
 
       {message && <Callout tone="success">{message}</Callout>}
+      {error && <Callout tone="danger" title={t('Aksi gagal', 'Action failed')}>{error}</Callout>}
 
       <div className="report-split">
         <div style={{ display: 'grid', gap: 16 }}>
           <section className="card settings-card">
             <div className="settings-card__head">
-              <h3>Tema tampilan</h3>
-              <p>Pilih mode terang atau gelap untuk seluruh aplikasi.</p>
+              <h3>{t('Tema tampilan', 'Appearance theme')}</h3>
+              <p>{t('Pilih mode terang atau gelap untuk seluruh aplikasi.', 'Choose light or dark mode for the whole app.')}</p>
             </div>
             <div className="device-grid">
               <button
@@ -109,10 +138,10 @@ export function PreferencesPage() {
                   <span className="device-card__icon" style={{ background: 'var(--green-soft)', color: 'var(--green)' }}>
                     <Sun size={16} />
                   </span>
-                  {theme === 'light' && <Badge tone="orange">Aktif</Badge>}
+                  {theme === 'light' && <Badge tone="orange">{t('Aktif', 'Active')}</Badge>}
                 </div>
-                <h3>Light mode</h3>
-                <p>Terang, bersih, cocok untuk area produksi.</p>
+                <h3>{t('Light mode', 'Light mode')}</h3>
+                <p>{t('Terang, bersih, cocok untuk area produksi.', 'Bright and clean, suited to the production floor.')}</p>
               </button>
               <button
                 type="button"
@@ -127,55 +156,65 @@ export function PreferencesPage() {
                   <span className="device-card__icon">
                     <Moon size={16} />
                   </span>
-                  {theme === 'dark' && <Badge tone="orange">Aktif</Badge>}
+                  {theme === 'dark' && <Badge tone="orange">{t('Aktif', 'Active')}</Badge>}
                 </div>
-                <h3>Dark mode</h3>
-                <p>Nyaman untuk shift malam dan ruang redup.</p>
+                <h3>{t('Dark mode', 'Dark mode')}</h3>
+                <p>{t('Nyaman untuk shift malam dan ruang redup.', 'Comfortable for night shifts and dim rooms.')}</p>
               </button>
             </div>
           </section>
 
           <section className="card settings-card">
             <div className="settings-card__head">
-              <h3>Bahasa & format</h3>
-              <p>Format angka mengikuti locale Indonesia.</p>
+              <h3>{t('Bahasa & format', 'Language & format')}</h3>
+              <p>{t('Bahasa berlaku untuk seluruh aplikasi.', 'Language applies to the entire app.')}</p>
             </div>
             <div className="form-grid">
-              <Field label="Bahasa" htmlFor="pref-language">
+              <Field label={t('Bahasa', 'Language')} htmlFor="pref-language">
                 <select
                   id="pref-language"
                   className="select"
-                  value={prefs.language}
-                  onChange={(event) => requestSave({ ...prefs, language: event.target.value })}
+                  value={draft.language}
+                  onChange={(event) => update('language', event.target.value as Language)}
                 >
                   <option value="id">Bahasa Indonesia</option>
                   <option value="en">English</option>
                 </select>
               </Field>
-              <Field label="Format tanggal" htmlFor="pref-date">
-                <select id="pref-date" className="select" defaultValue="ddmmyyyy">
-                  <option value="ddmmyyyy">12 November 2026</option>
+              <Field label={t('Format tanggal', 'Date format')} htmlFor="pref-date">
+                <select
+                  id="pref-date"
+                  className="select"
+                  value={draft.dateFormat}
+                  onChange={(event) => update('dateFormat', event.target.value as DateFormat)}
+                >
+                  <option value="long">12 November 2026</option>
                   <option value="numeric">12/11/2026</option>
                   <option value="iso">2026-11-12</option>
                 </select>
               </Field>
-              <Field label="Zona waktu" htmlFor="pref-timezone">
-                <select id="pref-timezone" className="select" defaultValue="wib">
+              <Field label={t('Zona waktu', 'Time zone')} htmlFor="pref-timezone">
+                <select
+                  id="pref-timezone"
+                  className="select"
+                  value={draft.timezone}
+                  onChange={(event) => update('timezone', event.target.value as Timezone)}
+                >
                   <option value="wib">WIB (GMT+7)</option>
                   <option value="wita">WITA (GMT+8)</option>
                   <option value="wit">WIT (GMT+9)</option>
                 </select>
               </Field>
-              <Field label="Density tabel" htmlFor="pref-density">
+              <Field label={t('Density tabel', 'Table density')} htmlFor="pref-density">
                 <select
                   id="pref-density"
                   className="select"
-                  value={prefs.density}
-                  onChange={(event) => requestSave({ ...prefs, density: event.target.value })}
+                  value={draft.density}
+                  onChange={(event) => update('density', event.target.value as Density)}
                 >
-                  <option value="comfortable">Comfortable</option>
-                  <option value="compact">Compact</option>
-                  <option value="spacious">Spacious</option>
+                  <option value="comfortable">{t('Comfortable', 'Comfortable')}</option>
+                  <option value="compact">{t('Compact', 'Compact')}</option>
+                  <option value="spacious">{t('Spacious', 'Spacious')}</option>
                 </select>
               </Field>
             </div>
@@ -183,53 +222,57 @@ export function PreferencesPage() {
 
           <section className="card settings-card">
             <div className="settings-card__head">
-              <h3>Perilaku aplikasi</h3>
-              <p>Preferensi navigasi dan animasi.</p>
+              <h3>{t('Perilaku aplikasi', 'App behaviour')}</h3>
+              <p>{t('Preferensi navigasi dan animasi.', 'Navigation and animation preferences.')}</p>
             </div>
             <div className="switch-row">
               <div className="switch-copy">
-                <strong>Sidebar terbuka saat login</strong>
-                <span>Tampilkan sidebar dalam kondisi expanded.</span>
+                <strong>{t('Sidebar terbuka saat login', 'Sidebar expanded at login')}</strong>
+                <span>{t('Tampilkan sidebar dalam kondisi expanded.', 'Show the sidebar expanded.')}</span>
               </div>
               <Toggle
-                checked={prefs.sidebarDefault}
-                onChange={(value) => requestSave({ ...prefs, sidebarDefault: value })}
-                label="Sidebar terbuka saat login"
+                checked={draft.sidebarDefault}
+                onChange={(value) => update('sidebarDefault', value)}
+                label={t('Sidebar terbuka saat login', 'Sidebar expanded at login')}
               />
             </div>
             <div className="switch-row">
               <div className="switch-copy">
-                <strong>Kurangi animasi</strong>
-                <span>Matikan transisi non-esensial pada perangkat lambat.</span>
+                <strong>{t('Kurangi animasi', 'Reduce motion')}</strong>
+                <span>{t('Matikan transisi non-esensial pada perangkat lambat.', 'Disable non-essential transitions on slow devices.')}</span>
               </div>
               <Toggle
-                checked={prefs.reduceMotion}
-                onChange={(value) => requestSave({ ...prefs, reduceMotion: value })}
-                label="Kurangi animasi"
+                checked={draft.reduceMotion}
+                onChange={(value) => update('reduceMotion', value)}
+                label={t('Kurangi animasi', 'Reduce motion')}
               />
             </div>
-            <Field label="Halaman awal setelah login" htmlFor="pref-start">
+            <Field label={t('Halaman awal setelah login', 'Start page after login')} htmlFor="pref-start">
               <select
                 id="pref-start"
                 className="select"
-                value={prefs.startPage}
-                onChange={(event) => requestSave({ ...prefs, startPage: event.target.value })}
+                value={draft.startPage}
+                onChange={(event) => update('startPage', event.target.value)}
               >
-                <option value="dashboard">Dashboard</option>
-                <option value="schedule">Jadwal Produksi</option>
-                <option value="queue">Antrian Sub Assy</option>
-                <option value="stock">Stock Overview</option>
+                {allowedStartPages.map((page) => (
+                  <option key={page.path} value={page.path}>
+                    {t(page.id, page.en)}
+                  </option>
+                ))}
               </select>
             </Field>
             <div className="form-actions">
-              <Button type="button" variant="secondary" onClick={handleReset}>Reset default</Button>
+              <Button type="button" variant="secondary" onClick={() => void handleReset()} disabled={saving}>
+                {t('Reset default', 'Reset to default')}
+              </Button>
               <Button
                 variant="primary"
                 leftIcon={<Save size={15} />}
-                disabled={!pendingPrefs}
-                onClick={() => requestSave(prefs)}
+                disabled={!dirty || saving}
+                loading={saving}
+                onClick={() => void handleSave()}
               >
-                Simpan preferensi
+                {t('Simpan preferensi', 'Save preferences')}
               </Button>
             </div>
           </section>
@@ -238,38 +281,48 @@ export function PreferencesPage() {
         <div style={{ display: 'grid', gap: 16 }}>
           <section className="card settings-card">
             <div className="settings-card__head">
-              <h3>Preview</h3>
-              <p>Ringkasan preferensi aktif</p>
+              <h3>{t('Preview', 'Preview')}</h3>
+              <p>{t('Ringkasan preferensi aktif', 'Active preference summary')}</p>
             </div>
             <div className="glass-inset" style={{ padding: 16 }}>
               <div className="row row--between">
-                <span className="info-label">Tema</span>
+                <span className="info-label">{t('Tema', 'Theme')}</span>
                 <Badge tone="orange">{theme === 'dark' ? 'Dark mode' : 'Light mode'}</Badge>
               </div>
               <div className="row row--between" style={{ marginTop: 10 }}>
-                <span className="info-label">Bahasa</span>
-                <span className="info-value">{prefs.language === 'id' ? 'Indonesia' : 'English'}</span>
+                <span className="info-label">{t('Bahasa', 'Language')}</span>
+                <span className="info-value">{preferences.language === 'id' ? 'Indonesia' : 'English'}</span>
               </div>
               <div className="row row--between" style={{ marginTop: 10 }}>
-                <span className="info-label">Density</span>
-                <span className="info-value">{prefs.density}</span>
+                <span className="info-label">{t('Format tanggal', 'Date format')}</span>
+                <span className="info-value">{formatDate(new Date())}</span>
               </div>
               <div className="row row--between" style={{ marginTop: 10 }}>
-                <span className="info-label">Start page</span>
-                <span className="info-value">{prefs.startPage}</span>
+                <span className="info-label">{t('Density', 'Density')}</span>
+                <span className="info-value">{preferences.density}</span>
+              </div>
+              <div className="row row--between" style={{ marginTop: 10 }}>
+                <span className="info-label">{t('Halaman awal', 'Start page')}</span>
+                <span className="info-value">
+                  {t(
+                    startPages.find((page) => page.path === preferences.startPage)?.id ?? preferences.startPage,
+                    startPages.find((page) => page.path === preferences.startPage)?.en ?? preferences.startPage,
+                  )}
+                </span>
               </div>
             </div>
             <Callout tone="info" className="callout" style={{ marginTop: 14 }}>
               <span className="row" style={{ gap: 6 }}>
-                <Monitor size={13} /> Preferensi hanya berlaku di browser ini.
+                <Monitor size={13} />{' '}
+                {t('Preferensi tersimpan pada akun Anda.', 'Preferences are saved to your account.')}
               </span>
             </Callout>
           </section>
 
           <section className="card settings-card">
             <div className="settings-card__head">
-              <h3>Shortcut</h3>
-              <p>Navigasi cepat</p>
+              <h3>{t('Shortcut', 'Shortcuts')}</h3>
+              <p>{t('Navigasi cepat', 'Quick navigation')}</p>
             </div>
             <div className="movement-list">
               <div className="movement">
@@ -278,7 +331,7 @@ export function PreferencesPage() {
                 </span>
                 <div className="movement__copy">
                   <strong>Dashboard</strong>
-                  <span>Ringkasan produksi hari ini</span>
+                  <span>{t('Ringkasan produksi hari ini', "Today's production summary")}</span>
                 </div>
               </div>
               <div className="movement">
@@ -286,24 +339,14 @@ export function PreferencesPage() {
                   <Palette size={14} />
                 </span>
                 <div className="movement__copy">
-                  <strong>Toggle tema</strong>
-                  <span>Gunakan tombol matahari/bulan di topbar</span>
+                  <strong>{t('Toggle tema', 'Toggle theme')}</strong>
+                  <span>{t('Gunakan tombol matahari/bulan di topbar', 'Use the sun/moon button in the top bar')}</span>
                 </div>
               </div>
             </div>
           </section>
         </div>
       </div>
-
-      {showConfirm && pendingPrefs && (
-        <Callout tone="info" title="Konfirmasi Perubahan" style={{ position: 'fixed', bottom: 24, right: 24, maxWidth: 420, zIndex: 100 }}>
-          <p>Simpan perubahan preferensi ini?</p>
-          <div className="form-actions">
-            <Button variant="secondary" onClick={handleCancel}>Batalkan</Button>
-            <Button variant="primary" onClick={handleConfirm}>Simpan</Button>
-          </div>
-        </Callout>
-      )}
     </div>
   )
 }

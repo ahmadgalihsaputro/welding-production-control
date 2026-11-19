@@ -10,11 +10,13 @@ import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { inventoryHealth, inventoryTrend, stockItems } from '../../data/mock'
 import { formatNumber } from '../../lib/utils'
 import type { StockItem } from '../../types'
 
 export function InventoryReportPage() {
+  const { t } = usePreferences()
   const [period, setPeriod] = useState('12d')
   const [category, setCategory] = useState('all')
 
@@ -34,7 +36,7 @@ export function InventoryReportPage() {
         </div>
       ),
     },
-    { key: 'category', header: 'Kategori', render: (item) => <Badge tone="neutral">{item.category}</Badge> },
+    { key: 'category', header: t('Kategori', 'Category'), render: (item) => <Badge tone="neutral">{item.category}</Badge> },
     { key: 'store', header: 'Store', align: 'right', render: (item) => <span className="mono">{formatNumber(item.store)}</span> },
     { key: 'buffer', header: 'Buffer', align: 'right', render: (item) => <span className="mono">{formatNumber(item.buffer)}</span> },
     { key: 'max', header: 'Max store', align: 'right', render: (item) => <span className="mono muted">{formatNumber(item.maxStore)}</span> },
@@ -52,9 +54,9 @@ export function InventoryReportPage() {
   const store = visibleTrend.map((item) => item.store)
   const buffer = visibleTrend.map((item) => item.buffer)
   const inventoryHealthData = [
-    { label: 'Aman', value: inventoryHealth.safe, color: '#10b981' },
+    { label: t('Aman', 'Safe'), value: inventoryHealth.safe, color: '#10b981' },
     { label: 'Low stock', value: inventoryHealth.low, color: '#f97316' },
-    { label: 'Kosong', value: inventoryHealth.empty, color: '#ef4444' },
+    { label: t('Kosong', 'Empty'), value: inventoryHealth.empty, color: '#ef4444' },
     { label: 'Full store', value: inventoryHealth.full, color: '#38bdf8' },
   ]
 
@@ -70,7 +72,10 @@ export function InventoryReportPage() {
       <PageHeader
         eyebrow="Reports"
         title="Inventory Report"
-        subtitle="Posisi stok store dan buffer, tren pergerakan, serta kesehatan inventory per kategori. Digunakan untuk review mingguan bersama Leader."
+        subtitle={t(
+          'Posisi stok store dan buffer, tren pergerakan, serta kesehatan inventory per kategori. Digunakan untuk review mingguan bersama Leader.',
+          'Store and buffer stock positions, movement trends, and inventory health by category. Used for the weekly review with the Leader.',
+        )}
         meta={
           <>
             <span className="page-meta__item">
@@ -89,23 +94,23 @@ export function InventoryReportPage() {
       />
 
       <div className="kpi-grid">
-        <StatCard label="Total store" value={formatNumber(totalStore)} suffix="pcs" icon={Warehouse} tone="sky" note="Seluruh PN" />
-        <StatCard label="Total buffer" value={formatNumber(totalBuffer)} suffix="pcs" icon={Boxes} tone="orange" note="Menunggu store in" />
-        <StatCard label="Low stock" value={String(low)} suffix="PN" icon={TriangleAlert} tone="red" note="Butuh replenishment" />
-        <StatCard label="Kategori" value="5" suffix="jenis" icon={Layers3} tone="green" note="Assy — child part" />
+        <StatCard label="Total store" value={formatNumber(totalStore)} suffix="pcs" icon={Warehouse} tone="sky" note={t('Seluruh PN', 'All part numbers')} />
+        <StatCard label="Total buffer" value={formatNumber(totalBuffer)} suffix="pcs" icon={Boxes} tone="orange" note={t('Menunggu store in', 'Awaiting store in')} />
+        <StatCard label="Low stock" value={String(low)} suffix="PN" icon={TriangleAlert} tone="red" note={t('Butuh replenishment', 'Needs replenishment')} />
+        <StatCard label={t('Kategori', 'Category')} value="5" suffix={t('jenis', 'types')} icon={Layers3} tone="green" note="Assy — child part" />
       </div>
 
       <section className="card">
         <div className="report-filters">
-          <Field label="Periode" htmlFor="inv-period">
+          <Field label={t('Periode', 'Period')} htmlFor="inv-period">
             <select id="inv-period" className="select" value={period} onChange={(event) => setPeriod(event.target.value)}>
-              <option value="12d">12 hari terakhir</option>
-              <option value="7d">7 hari terakhir</option>
+              <option value="12d">{t('12 hari terakhir', 'Last 12 days')}</option>
+              <option value="7d">{t('7 hari terakhir', 'Last 7 days')}</option>
             </select>
           </Field>
-          <Field label="Kategori" htmlFor="inv-category">
+          <Field label={t('Kategori', 'Category')} htmlFor="inv-category">
             <select id="inv-category" className="select" value={category} onChange={(event) => setCategory(event.target.value)}>
-              <option value="all">Semua kategori</option>
+              <option value="all">{t('Semua kategori', 'All categories')}</option>
               <option value="Assy">Assy</option>
               <option value="Sub Assy">Sub Assy</option>
               <option value="Press Part">Press Part</option>
@@ -113,22 +118,22 @@ export function InventoryReportPage() {
               <option value="Child Part">Child Part</option>
             </select>
           </Field>
-          <Field label="Lokasi" htmlFor="inv-location">
+          <Field label={t('Lokasi', 'Location')} htmlFor="inv-location">
             <select id="inv-location" className="select" defaultValue="all">
-              <option value="all">Semua lokasi</option>
+              <option value="all">{t('Semua lokasi', 'All locations')}</option>
               <option>Production Buffer</option>
               <option>Assy Store</option>
               <option>Sub Assy Store</option>
             </select>
           </Field>
-          <Field label="Tipe laporan" htmlFor="inv-type">
+          <Field label={t('Tipe laporan', 'Report type')} htmlFor="inv-type">
             <select id="inv-type" className="select" defaultValue="summary">
               <option value="summary">Summary</option>
-              <option value="detail">Detail per part</option>
+              <option value="detail">{t('Detail per part', 'Detail per part')}</option>
             </select>
           </Field>
           <Button variant="primary" leftIcon={<Warehouse size={15} />}>
-            Terapkan
+            {t('Terapkan', 'Apply')}
           </Button>
         </div>
       </section>
@@ -137,7 +142,7 @@ export function InventoryReportPage() {
         <section className="card chart-card">
           <div className="chart-card__head">
             <div>
-              <h2 className="section-title">Tren inventory</h2>
+              <h2 className="section-title">{t('Tren inventory', 'Inventory trend')}</h2>
               <p className="section-sub">Store vs buffer (pcs)</p>
             </div>
             <Badge tone="sky">Daily</Badge>
@@ -145,7 +150,7 @@ export function InventoryReportPage() {
           <AreaChart
             labels={labels}
             height={270}
-            ariaLabel="Grafik tren stok store dan buffer"
+            ariaLabel={t('Grafik tren stok store dan buffer', 'Store and buffer stock trend chart')}
             series={[
               { name: 'Store', color: '#38bdf8', values: store, area: true },
               { name: 'Buffer', color: '#f97316', values: buffer, area: true },
@@ -156,15 +161,15 @@ export function InventoryReportPage() {
         <section className="card section-card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Kesehatan stok</h2>
-              <p className="section-sub">Status PN saat ini</p>
+              <h2 className="section-title">{t('Kesehatan stok', 'Stock health')}</h2>
+              <p className="section-sub">{t('Status PN saat ini', 'Current part number status')}</p>
             </div>
           </div>
           <DonutChart
             data={inventoryHealthData}
             size={172}
             centerValue={String(stockItems.length)}
-            centerLabel="part number"
+            centerLabel={t('part number', 'part numbers')}
           />
         </section>
       </div>
@@ -173,14 +178,14 @@ export function InventoryReportPage() {
         <section className="card chart-card">
           <div className="chart-card__head">
             <div>
-              <h2 className="section-title">Stok per kategori</h2>
+              <h2 className="section-title">{t('Stok per kategori', 'Stock by category')}</h2>
               <p className="section-sub">Store + buffer (pcs)</p>
             </div>
           </div>
           <BarChart
             labels={categoryTotals.map((item) => item.name)}
             height={250}
-            ariaLabel="Grafik stok per kategori"
+            ariaLabel={t('Grafik stok per kategori', 'Stock by category chart')}
             series={[
               {
                 name: 'Qty',
@@ -194,8 +199,8 @@ export function InventoryReportPage() {
         <section className="card section-card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Catatan inventory</h2>
-              <p className="section-sub">Rekomendasi tindakan</p>
+              <h2 className="section-title">{t('Catatan inventory', 'Inventory notes')}</h2>
+              <p className="section-sub">{t('Rekomendasi tindakan', 'Recommended actions')}</p>
             </div>
           </div>
           <div className="timeline">
@@ -203,12 +208,14 @@ export function InventoryReportPage() {
               <span className="timeline-dot timeline-dot--amber" />
               <div>
                 <div className="timeline-head">
-                  <span className="timeline-title">Replenishment sub assy</span>
-                  <span className="timeline-time">Prioritas</span>
+                  <span className="timeline-title">{t('Replenishment sub assy', 'Sub Assy replenishment')}</span>
+                  <span className="timeline-time">{t('Prioritas', 'Priority')}</span>
                 </div>
                 <p className="timeline-text">
-                  Tiga part number sub assy berada di bawah safety stock. Terbitkan kanban belanja
-                  sebelum shift 2.
+                  {t(
+                    'Tiga part number sub assy berada di bawah safety stock. Terbitkan kanban belanja sebelum shift 2.',
+                    'Three sub Assy part numbers are below safety stock. Issue purchase kanbans before shift 2.',
+                  )}
                 </p>
               </div>
             </div>
@@ -216,11 +223,14 @@ export function InventoryReportPage() {
               <span className="timeline-dot timeline-dot--green" />
               <div>
                 <div className="timeline-head">
-                  <span className="timeline-title">Store in stabil</span>
-                  <span className="timeline-time">Hari ini</span>
+                  <span className="timeline-title">{t('Store in stabil', 'Store in stable')}</span>
+                  <span className="timeline-time">{t('Hari ini', 'Today')}</span>
                 </div>
                 <p className="timeline-text">
-                  Rata-rata waktu tunggu buffer ke store 11 menit, masih di bawah standar 20 menit.
+                  {t(
+                    'Rata-rata waktu tunggu buffer ke store 11 menit, masih di bawah standar 20 menit.',
+                    'Average buffer-to-store waiting time is 11 minutes, still below the 20-minute standard.',
+                  )}
                 </p>
               </div>
             </div>
@@ -228,11 +238,14 @@ export function InventoryReportPage() {
               <span className="timeline-dot timeline-dot--sky" />
               <div>
                 <div className="timeline-head">
-                  <span className="timeline-title">Akurasi stok</span>
-                  <span className="timeline-time">Opname</span>
+                  <span className="timeline-title">{t('Akurasi stok', 'Stock accuracy')}</span>
+                  <span className="timeline-time">{t('Opname', 'Stocktake')}</span>
                 </div>
                 <p className="timeline-text">
-                  Akurasi stock opname terakhir 99,2% dengan 3 selisih kecil yang sudah diajukan.
+                  {t(
+                    'Akurasi stock opname terakhir 99,2% dengan 3 selisih kecil yang sudah diajukan.',
+                    'The last stocktake accuracy was 99.2% with 3 minor discrepancies already submitted.',
+                  )}
                 </p>
               </div>
             </div>
@@ -243,10 +256,10 @@ export function InventoryReportPage() {
       <section className="card">
         <div className="section-head">
           <div>
-            <h2 className="section-title">Detail stok</h2>
+            <h2 className="section-title">{t('Detail stok', 'Stock details')}</h2>
             <p className="section-sub">{rows.length} part number</p>
           </div>
-          <Badge tone="neutral">Snapshot 09:12</Badge>
+          <Badge tone="neutral">{t('Snapshot 09:12', 'Snapshot 09:12')}</Badge>
         </div>
         <DataTable columns={columns} rows={rows} rowKey={(item) => item.id} minWidth={820} />
       </section>

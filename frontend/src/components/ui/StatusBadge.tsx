@@ -1,5 +1,11 @@
+import { usePreferences } from '../../contexts/PreferencesContext'
 import type { Tone } from '../../types'
 import { Badge } from './Badge'
+
+const statusEn: Record<string, string> = {
+  safe: 'Safe',
+  empty: 'Empty',
+}
 
 interface StatusMeta {
   label: string
@@ -47,10 +53,11 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, label, dot = true }: StatusBadgeProps) {
+  const { t } = usePreferences()
   const meta = statusMap[status] ?? { label: status, tone: 'neutral' as Tone }
   return (
     <Badge tone={meta.tone} dot={dot}>
-      {label ?? meta.label}
+      {label ?? t(meta.label, statusEn[status] ?? meta.label)}
     </Badge>
   )
 }

@@ -20,6 +20,7 @@ import { materialRequests as initialRequests } from '../../data/mock'
 import type { MaterialRequest } from '../../types'
 import { formatNumber } from '../../lib/utils'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 
 const nextStatus: Record<MaterialRequest['status'], MaterialRequest['status']> = {
   waiting: 'prepared',
@@ -28,15 +29,15 @@ const nextStatus: Record<MaterialRequest['status'], MaterialRequest['status']> =
   complete: 'complete',
 }
 
-const nextLabel: Record<MaterialRequest['status'], string> = {
-  waiting: 'Tandai disiapkan',
-  prepared: 'Tandai diambil',
-  picked: 'Selesaikan',
-  complete: 'Selesai',
-}
-
 export function MaterialRequestPage() {
+  const { t } = usePreferences()
   const { user } = useAuth()
+  const nextLabel: Record<MaterialRequest['status'], string> = {
+    waiting: t('Tandai disiapkan', 'Mark as prepared'),
+    prepared: t('Tandai diambil', 'Mark as picked'),
+    picked: t('Selesaikan', 'Complete'),
+    complete: t('Selesai', 'Completed'),
+  }
   const isAdmin = user?.role === 'admin'
   const [requests, setRequests] = useState(initialRequests)
   const [selectedId, setSelectedId] = useState(initialRequests[0].id)
@@ -60,7 +61,7 @@ export function MaterialRequestPage() {
 
   const advance = () => {
     if (isAdmin) {
-      setMessage('Admin hanya dapat memantau; perubahan status dilakukan Leader.')
+      setMessage(t('Admin hanya dapat memantau; perubahan status dilakukan Leader.', 'Admin can only monitor; status changes are performed by the Leader.'))
       return
     }
     setRequests((current) =>
@@ -68,27 +69,30 @@ export function MaterialRequestPage() {
         item.id === selected.id ? { ...item, status: nextStatus[item.status] } : item,
       ),
     )
-    setMessage(`Status ${selected.code} diperbarui menjadi ${nextStatus[selected.status]}.`)
+    setMessage(`${t('Status', 'Status')} ${selected.code} ${t('diperbarui menjadi', 'updated to')} ${nextStatus[selected.status]}.`)
   }
 
   const createKanban = () => {
     if (isAdmin) {
-      setMessage('Admin hanya dapat memantau; pencetakan Kanban Belanja dilakukan Leader.')
+      setMessage(t('Admin hanya dapat memantau; pencetakan Kanban Belanja dilakukan Leader.', 'Admin can only monitor; printing Kanban Belanja is performed by the Leader.'))
       return
     }
-    setMessage(`Kanban Belanja untuk ${selected.partNumber} siap dicetak.`)
+    setMessage(`${t('Kanban Belanja untuk', 'Kanban Belanja for')} ${selected.partNumber} ${t('siap dicetak.', 'is ready to print.')}`)
   }
 
   return (
     <div className="page">
       <PageHeader
         eyebrow="Material Control"
-        title="Permintaan Material"
-        subtitle="Buat dan pantau Kanban Belanja berdasarkan kebutuhan aktual Area Assy. Jumlah box dihitung dari standard packaging setiap part number."
+        title={t('Permintaan Material', 'Material Requests')}
+        subtitle={t(
+          'Buat dan pantau Kanban Belanja berdasarkan kebutuhan aktual Area Assy. Jumlah box dihitung dari standard packaging setiap part number.',
+          'Create and monitor Kanban Belanja based on the actual needs of the Assy Area. The number of boxes is calculated from the standard packaging of each part number.',
+        )}
         meta={
           <>
             <span className="page-meta__item">
-              <ClipboardList size={12} /> {requests.length} request
+              <ClipboardList size={12} /> {requests.length} {t('request', 'requests')}
             </span>
             <span className="page-meta__item">
               <ScanBarcode size={12} /> Kanban Belanja
@@ -98,10 +102,10 @@ export function MaterialRequestPage() {
         actions={
           <>
             <Button variant="secondary" leftIcon={<Printer size={15} />} onClick={createKanban} disabled={isAdmin}>
-              Cetak Kanban
+              {t('Cetak Kanban', 'Print Kanban')}
             </Button>
             <Button variant="primary" leftIcon={<PackagePlus size={15} />} onClick={createKanban} disabled={isAdmin}>
-              Buat permintaan
+              {t('Buat permintaan', 'Create request')}
             </Button>
           </>
         }
@@ -111,28 +115,28 @@ export function MaterialRequestPage() {
 
       <div className="kpi-grid kpi-grid--3">
         <StatCard
-          label="Request aktif"
+          label={t('Request aktif', 'Active requests')}
           value={String(requests.length)}
-          suffix="request"
+          suffix={t('request', 'requests')}
           icon={ClipboardList}
           tone="orange"
-          note={`${waiting} menunggu Supply`}
+          note={`${waiting} ${t('menunggu Supply', 'awaiting Supply')}`}
         />
         <StatCard
-          label="Total box diminta"
+          label={t('Total box diminta', 'Total boxes requested')}
           value={String(totalBoxes)}
           suffix="box"
           icon={Boxes}
           tone="sky"
-          note="Seluruh request hari ini"
+          note={t('Seluruh request hari ini', 'All requests today')}
         />
         <StatCard
-          label="Selesai"
+          label={t('Selesai', 'Completed')}
           value={String(complete)}
-          suffix="request"
+          suffix={t('request', 'requests')}
           icon={FileText}
           tone="green"
-          note="Sudah diterima produksi"
+          note={t('Sudah diterima produksi', 'Received by production')}
         />
       </div>
 
@@ -140,13 +144,13 @@ export function MaterialRequestPage() {
         <section className="card">
           <div className="table-toolbar">
             <div>
-              <h2 className="section-title">Daftar permintaan</h2>
-              <p className="section-sub">Pilih request untuk melihat detail Kanban</p>
+              <h2 className="section-title">{t('Daftar permintaan', 'Request list')}</h2>
+              <p className="section-sub">{t('Pilih request untuk melihat detail Kanban', 'Select a request to view Kanban details')}</p>
             </div>
             <SearchInput
               value={search}
               onChange={setSearch}
-              placeholder="Cari kode / PN…"
+              placeholder={t('Cari kode / PN…', 'Search code / PN…')}
               className="search-inline"
             />
           </div>
@@ -180,7 +184,7 @@ export function MaterialRequestPage() {
 
           <div className="table-footer">
             <span>
-              Total <strong>{totalBoxes}</strong> box dari {requests.length} request
+              {t('Total', 'Total')} <strong>{totalBoxes}</strong> {t('box dari', 'boxes from')} {requests.length} {t('request', 'requests')}
             </span>
             <span>Robot G · Area Assy</span>
           </div>
@@ -198,39 +202,39 @@ export function MaterialRequestPage() {
             <h2 className="job-number" style={{ marginTop: 10 }}>
               {selected.partNumber}
             </h2>
-            <p className="job-model">Sub Assy · Tujuan {selected.destination}</p>
+            <p className="job-model">Sub Assy · {t('Tujuan', 'Destination')} {selected.destination}</p>
 
             <div className="request-boxes">
               <strong>{selected.boxes}</strong>
-              <span>boxes</span>
+              <span>{t('boxes', 'boxes')}</span>
             </div>
             <p className="small muted">
-              Standard {selected.pcsPerBox} pcs/box · Total{' '}
+              {t('Standard', 'Standard')} {selected.pcsPerBox} {t('pcs/box · Total', 'pcs/box · Total')}{' '}
               {formatNumber(selected.boxes * selected.pcsPerBox)} pcs
             </p>
 
             <div className="info-grid" style={{ marginTop: 16 }}>
               <div className="info-item">
-                <span className="info-label">Dibuat oleh</span>
+                <span className="info-label">{t('Dibuat oleh', 'Created by')}</span>
                 <span className="info-value info-value--strong">{selected.requester}</span>
               </div>
               <div className="info-item">
-                <span className="info-label">Waktu dibuat</span>
+                <span className="info-label">{t('Waktu dibuat', 'Created at')}</span>
                 <span className="info-value info-value--strong">{selected.createdAt}</span>
               </div>
               <div className="info-item">
-                <span className="info-label">Tujuan</span>
+                <span className="info-label">{t('Tujuan', 'Destination')}</span>
                 <span className="info-value">{selected.destination}</span>
               </div>
               <div className="info-item">
-                <span className="info-label">Status</span>
+                <span className="info-label">{t('Status', 'Status')}</span>
                 <span className="info-value">{selected.status}</span>
               </div>
             </div>
 
             <div className="form-actions">
               <Button variant="secondary" leftIcon={<Printer size={14} />} onClick={createKanban} disabled={isAdmin}>
-                Cetak
+                {t('Cetak', 'Print')}
               </Button>
               <Button
                 variant="primary"
@@ -246,8 +250,8 @@ export function MaterialRequestPage() {
           <section className="card">
             <div className="section-head">
               <div>
-                <h2 className="section-title">Preview Kanban Belanja</h2>
-                <p className="section-sub">Template 80 × 100 mm</p>
+                <h2 className="section-title">{t('Preview Kanban Belanja', 'Kanban Belanja Preview')}</h2>
+                <p className="section-sub">{t('Template 80 × 100 mm', 'Template 80 × 100 mm')}</p>
               </div>
               <Badge tone="warning">Supply</Badge>
             </div>
@@ -265,11 +269,11 @@ export function MaterialRequestPage() {
                   <strong>{selected.boxes}</strong>
                 </div>
                 <div>
-                  <span>Qty / box</span>
+                  <span>{t('Qty / box', 'Qty / box')}</span>
                   <strong>{selected.pcsPerBox} pcs</strong>
                 </div>
                 <div>
-                  <span>Destination</span>
+                  <span>{t('Destination', 'Destination')}</span>
                   <strong>Area Assy</strong>
                 </div>
                 <div>
@@ -283,9 +287,11 @@ export function MaterialRequestPage() {
         </div>
       </div>
 
-      <Callout tone="info" title="Perhitungan box">
-        Kebutuhan box dihitung dari kebutuhan aktual Area Assy dibagi standard packaging PN.
-        Jika terjadi pembulatan, konfirmasi jumlah box ke Leader sebelum Kanban dicetak.
+      <Callout tone="info" title={t('Perhitungan box', 'Box calculation')}>
+        {t(
+          'Kebutuhan box dihitung dari kebutuhan aktual Area Assy dibagi standard packaging PN. Jika terjadi pembulatan, konfirmasi jumlah box ke Leader sebelum Kanban dicetak.',
+          'Box requirements are calculated from the actual Assy Area needs divided by the PN standard packaging. If rounding occurs, confirm the number of boxes with the Leader before the Kanban is printed.',
+        )}
       </Callout>
     </div>
   )

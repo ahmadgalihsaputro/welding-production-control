@@ -6,6 +6,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { QueueProvider } from './contexts/QueueContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { ConfirmationProvider } from './contexts/ConfirmationContext'
+import { PreferencesProvider } from './contexts/PreferencesContext'
 import { LoginPage } from './pages/auth/LoginPage'
 import { AssyQueuePage } from './pages/production/AssyQueuePage'
 import { ProductionAllocationPage } from './pages/production/ProductionAllocationPage'
@@ -45,12 +46,10 @@ import { NgReportPage } from './pages/reports/NgReportPage'
 import { ProductionReportPage } from './pages/reports/ProductionReportPage'
 import { TransactionReportPage } from './pages/reports/TransactionReportPage'
 import { BackupPage } from './pages/settings/BackupPage'
-import { IntegrationPage } from './pages/settings/IntegrationPage'
 import { NotificationsPage } from './pages/settings/NotificationsPage'
 import { PreferencesPage } from './pages/settings/PreferencesPage'
 import { PrintingPage } from './pages/settings/PrintingPage'
 import { ProfilePage } from './pages/settings/ProfilePage'
-import { SecurityPage } from './pages/settings/SecurityPage'
 import { DevicesPage } from './pages/users/DevicesPage'
 import { RolesPermissionsPage } from './pages/users/RolesPermissionsPage'
 import { UserListPage } from './pages/users/UserListPage'
@@ -58,7 +57,8 @@ import { UserListPage } from './pages/users/UserListPage'
 export default function App() {
   return (
     <ThemeProvider>
-      <ConfirmationProvider>
+      <PreferencesProvider>
+        <ConfirmationProvider>
         <AuthProvider>
           <QueueProvider>
             <BrowserRouter>
@@ -130,9 +130,7 @@ export default function App() {
               <Route path="/settings/profile" element={<ProfilePage />} />
               <Route path="/settings/preferences" element={<PreferencesPage />} />
               <Route path="/settings/notifications" element={<NotificationsPage />} />
-              <Route path="/settings/integration" element={<IntegrationPage />} />
               <Route path="/settings/printing" element={<PrintingPage />} />
-              <Route path="/settings/security" element={<SecurityPage />} />
               <Route path="/settings/backup" element={<BackupPage />} />
 
               <Route path="*" element={<NotFoundPage />} />
@@ -141,7 +139,8 @@ export default function App() {
           </BrowserRouter>
         </QueueProvider>
         </AuthProvider>
-      </ConfirmationProvider>
+        </ConfirmationProvider>
+      </PreferencesProvider>
     </ThemeProvider>
   )
 }

@@ -271,10 +271,10 @@ const kanbanConfigs = [
 ]
 
 const devices = [
-  { name: 'Tablet Assy Line 01', type: 'Tablet', location: 'Robot G — Area Assy', assignedTo: 'Andri Setiawan', status: 'online' },
-  { name: 'Tablet Sub Assy 02', type: 'Tablet', location: 'Robot G — Sub Assy', assignedTo: 'Rizky Anu', status: 'online' },
-  { name: 'Scanner Supply Kiosk 01', type: 'Scanner', location: 'Material Supply', assignedTo: 'Kiosk tanpa akun', status: 'online' },
-  { name: 'Printer Kanban Buffer', type: 'Printer', location: 'Production Buffer', assignedTo: 'Leader Produksi', status: 'offline' },
+  { name: 'Tablet Assy Line 01', type: 'Tablet', location: 'Robot G - Area Assy', assignedTo: 'Andri Setiawan', status: 'online' },
+  { name: 'Tablet Sub Assy 02', type: 'Tablet', location: 'Robot G - Sub Assy', assignedTo: 'Rizky Anu', status: 'online' },
+  { name: 'Scanner Supply Kiosk 01', type: 'Scanner', model: 'Zebra DS2208', location: 'Material Supply', assignedTo: 'Kiosk tanpa akun', status: 'online', connectionType: 'wireless' },
+  { name: 'Printer Kanban Buffer', type: 'Printer', model: 'Zebra ZT230', location: 'Production Buffer', assignedTo: 'Leader Produksi', status: 'offline', connectionType: 'wired', isDefault: true },
 ]
 
 const settings: Array<{ key: string; value: unknown }> = [
@@ -284,19 +284,11 @@ const settings: Array<{ key: string; value: unknown }> = [
   },
   {
     key: 'notifications',
-    value: { materialAlert: true, stockLow: true, machineDown: true, productionDelay: true, email: false, desktop: true },
-  },
-  {
-    key: 'integration',
-    value: { fssEnabled: false, fssEndpoint: '', syncIntervalMinutes: 15, lastSyncAt: null },
+    value: { assy: { low: true, high: true }, subAssy: { low: true, high: true }, criticalSafety: true },
   },
   {
     key: 'printing',
-    value: { defaultTemplate: 'A4-landscape', barcode: 'code128', printer: 'Printer Kanban Buffer', copies: 1 },
-  },
-  {
-    key: 'security',
-    value: { sessionMinutes: 480, minPasswordLength: 8, requireUppercase: true, requireNumber: true, auditLog: true },
+    value: { autoPrint: true, labelSize: '100x150', copies: 1, symbology: 'code128', dpi: '203' },
   },
   {
     key: 'backup',
@@ -625,6 +617,33 @@ async function main() {
 
   const bomRows = await syncWorkbookMasterData(blocks, masterData)
 
+  const assyParts = Array.from(parts.values()).filter((part) => part.type === 'Assy')
+  const scheduleSlots = [
+    { shift: 1, dueTime: '09:00' },
+    { shift: 1, dueTime: '10:30' },
+    { shift: 1, dueTime: '12:00' },
+    { shift: 2, dueTime: '14:00' },
+    { shift: 2, dueTime: '15:30' },
+  ]
+  for (const [index, part] of assyParts.entries()) {
+    const slot = scheduleSlots[index % scheduleSlots.length]
+    await prisma.scheduleItem.upsert({
+      where: { id: `seed-schedule-${part.partNumber}` },
+      update: {},
+      create: {
+        id: `seed-schedule-${part.partNumber}`,
+        partNumber: part.partNumber,
+        model: Array.from(part.models)[0] ?? '',
+        target: (part.packaging ?? 1) * 4,
+        actual: 0,
+        status: 'waiting',
+        shift: slot.shift,
+        dueTime: slot.dueTime,
+        line: part.line,
+      },
+    })
+  }
+
   for (const machine of machines) {
     await prisma.machine.upsert({
       where: { code: machine.code },
@@ -652,6 +671,8 @@ async function main() {
   if ((await prisma.device.count()) === 0) {
     await prisma.device.createMany({ data: devices })
   }
+
+  await prisma.appSetting.deleteMany({ where: { key: { in: ['integration', 'security'] } } })
 
   for (const setting of settings) {
     await prisma.appSetting.upsert({

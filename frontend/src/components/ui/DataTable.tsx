@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { cn } from '../../lib/utils'
 
 export interface Column<T> {
@@ -26,9 +27,11 @@ export function DataTable<T>({
   rowKey,
   minWidth = 640,
   compact = false,
-  emptyMessage = 'Belum ada data untuk ditampilkan.',
+  emptyMessage,
   footer,
 }: DataTableProps<T>) {
+  const { t } = usePreferences()
+  const empty = emptyMessage ?? t('Belum ada data untuk ditampilkan.', 'No data to display.')
   return (
     <>
       <div className="table-wrap">
@@ -56,7 +59,7 @@ export function DataTable<T>({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} style={{ textAlign: 'center', padding: '30px 16px' }}>
-                  <span className="muted small">{emptyMessage}</span>
+                  <span className="muted small">{empty}</span>
                 </td>
               </tr>
             ) : (

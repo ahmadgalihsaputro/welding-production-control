@@ -716,7 +716,7 @@ router.post(
 router.get('/schedules', authenticate, async (req, res, next) => {
   try {
     const shift = typeof req.query.shift === 'string' ? Number(req.query.shift) : undefined
-    const line = typeof req.query.line === 'string' ? req.query.line : undefined
+    const line = typeof req.query.line === 'string' && req.query.line !== 'all' ? req.query.line : undefined
     const items = await prisma.scheduleItem.findMany({
       where: {
         ...(shift ? { shift } : {}),

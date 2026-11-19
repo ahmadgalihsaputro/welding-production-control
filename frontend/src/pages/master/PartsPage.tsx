@@ -10,6 +10,7 @@ import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useConfirmation } from '../../contexts/ConfirmationContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { describeApiError } from '../../lib/api'
 import {
   createPart,
@@ -73,6 +74,7 @@ function optionalInt(value: string): number | null {
 
 export function PartsPage() {
   const { confirm } = useConfirmation()
+  const { t } = usePreferences()
   const [parts, setParts] = useState<ProductionPartRecord[]>([])
   const [models, setModels] = useState<ProductionModelRecord[]>([])
   const [stockItems, setStockItems] = useState<StockPolicyRecord[]>([])

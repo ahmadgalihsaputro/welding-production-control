@@ -320,7 +320,16 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
 
 router.get('/devices', requireRole('admin', 'leader', 'management'), async (_req, res, next) => {
   try {
-    res.json(await prisma.device.findMany({ orderBy: { name: 'asc' } }))
+    const devices = await prisma.device.findMany({
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { kanbanConfigs: true } } },
+    })
+    res.json(
+      devices.map(({ _count, ...device }) => ({
+        ...device,
+        kanbanConfigCount: _count.kanbanConfigs,
+      })),
+    )
   } catch (error) {
     next(error)
   }
@@ -329,23 +338,47 @@ router.get('/devices', requireRole('admin', 'leader', 'management'), async (_req
 const deviceSchema = z.object({
   name: z.string().min(1),
   type: z.enum(['Tablet', 'PC', 'Scanner', 'Printer']),
+  model: z.string().nullable().optional(),
   location: z.string().min(1),
   assignedTo: z.string().nullable().optional(),
   status: z.enum(['online', 'offline', 'maintenance']).optional(),
-  connectionType: z.enum(['wireless', 'wired']).optional(),
+  connectionType: z.enum(['wireless', 'wired']).nullable().optional(),
+  isDefault: z.boolean().optional(),
 })
+
+async function saveDevice(id: string | null, body: z.infer<typeof deviceSchema>) {
+  return prisma.$transaction(async (tx) => {
+    const type = body.type ?? (id
+      ? (await tx.device.findUniqueOrThrow({ where: { id } })).type
+      : undefined)
+    if (body.isDefault && type === 'Printer') {
+      await tx.device.updateMany({
+        where: { type: 'Printer', isDefault: true, ...(id ? { NOT: { id } } : {}) },
+        data: { isDefault: false },
+      })
+    }
+    const data = {
+      ...body,
+      ...(body.status ? { lastSeen: body.status === 'online' ? new Date() : undefined } : {}),
+    }
+    return id
+      ? tx.device.update({ where: { id }, data })
+      : tx.device.create({
+          data: {
+            ...data,
+            name: body.name,
+            type: body.type,
+            location: body.location,
+            status: body.status ?? 'offline',
+          },
+        })
+  })
+}
 
 router.post('/devices', requireRole('admin'), async (req, res, next) => {
   try {
     const body = deviceSchema.parse(req.body)
-    const device = await prisma.device.create({
-      data: {
-        ...body,
-        status: body.status ?? 'offline',
-        lastSeen: body.status === 'online' ? new Date() : null,
-      },
-    })
-    res.status(201).json(device)
+    res.status(201).json(await saveDevice(null, body))
   } catch (error) {
     next(error)
   }
@@ -354,14 +387,7 @@ router.post('/devices', requireRole('admin'), async (req, res, next) => {
 router.patch('/devices/:id', requireRole('admin', 'leader'), async (req, res, next) => {
   try {
     const body = deviceSchema.partial().parse(req.body)
-    const device = await prisma.device.update({
-      where: { id: String(req.params.id) },
-      data: {
-        ...body,
-        ...(body.status ? { lastSeen: body.status === 'online' ? new Date() : undefined } : {}),
-      },
-    })
-    res.json(device)
+    res.json(await saveDevice(String(req.params.id), body as z.infer<typeof deviceSchema>))
   } catch (error) {
     next(error)
   }

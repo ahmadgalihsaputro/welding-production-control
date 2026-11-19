@@ -50,7 +50,7 @@ router.get('/', async (req, res, next) => {
       }),
       prisma.stockItem.findMany({ orderBy: { partNumber: 'asc' } }),
       prisma.machine.findMany({ ...(line ? { where: { line } } : {}), orderBy: { code: 'asc' } }),
-      prisma.auditLog.findMany({ orderBy: { time: 'desc' }, take: 8 }),
+      prisma.auditLog.findMany({ where: line ? { line } : {}, orderBy: { time: 'desc' }, take: 8 }),
       prisma.materialRequest.findMany({ where: { status: { in: ['waiting', 'partial'] } }, take: 10 }),
       prisma.bufferItem.findMany({ where: { status: 'pending' }, take: 10 }),
     ])
@@ -111,6 +111,8 @@ router.get('/', async (req, res, next) => {
         .slice(0, 8),
       queue,
       machines,
+      schedules,
+      completedBoxes,
       stockAlerts: stockItems
         .filter((item) => item.status === 'low' || item.status === 'empty')
         .slice(0, 10),

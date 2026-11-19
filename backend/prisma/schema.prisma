@@ -71,6 +71,7 @@ model User {
   shiftMode   String   @default("non_shift")
   shiftBase   Int      @default(1)
   shiftAnchorDate DateTime? @db.Date
+  preferences Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -403,26 +404,33 @@ model KanbanPartConfig {
   storeLocation String
   kanbanType    String
   nextProcess   String
+  printerId     String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   part          ProductionPart @relation(fields: [partNumber], references: [partNumber], onDelete: Cascade)
+  printer       Device?       @relation(fields: [printerId], references: [id], onDelete: SetNull)
 
   @@unique([partNumber, model])
   @@index([partNumber])
+  @@index([printerId])
 }
 
 model Device {
   id            String    @id @default(cuid())
   name          String
   type          String
+  model         String?
   location      String
   assignedTo    String?
   status        String    @default("offline")
   lastSeen      DateTime?
-  connectionType String?  // 'wireless' | 'wired' for scanners
+  connectionType String?  // 'wireless' | 'wired' for scanners and printers
+  isDefault     Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  kanbanConfigs KanbanPartConfig[]
 }
 
 model AppSetting {

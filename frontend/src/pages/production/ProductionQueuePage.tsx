@@ -23,6 +23,7 @@ import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import askaLogo from '../../assets/aska_icon.png'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { useQueue } from '../../contexts/QueueContext'
 import { formatNumber } from '../../lib/utils'
 import {
@@ -39,19 +40,21 @@ interface ProductionQueuePageProps {
 
 const copy: Record<
   QueueType,
-  { title: string; subtitle: string; productionPath: string; device: string }
+  { titleId: string; titleEn: string; subtitleId: string; subtitleEn: string; productionPath: string; device: string }
 > = {
   Assy: {
-    title: 'Antrian Produksi Assy',
-    subtitle:
-      'Daftar box Assy yang siap dikerjakan operator Assy. Print kanban berarti menyelesaikan produksi 1 pallet/box.',
+    titleId: 'Antrian Produksi Assy',
+    titleEn: 'Assy Production Queue',
+    subtitleId: 'Daftar box Assy yang siap dikerjakan operator Assy. Print kanban berarti menyelesaikan produksi 1 pallet/box.',
+    subtitleEn: 'List of Assy boxes ready for Assy operators. Printing a kanban completes the production of 1 pallet/box.',
     productionPath: '/production/assy',
     device: 'Tablet Assy Line 01',
   },
   'Sub Assy': {
-    title: 'Antrian Replenishment Sub Assy',
-    subtitle:
-      'Antrean box Sub Assy dari pengambilan Supply. Print kanban berarti menyelesaikan produksi 1 pallet/box.',
+    titleId: 'Antrian Replenishment Sub Assy',
+    titleEn: 'Sub Assy Replenishment Queue',
+    subtitleId: 'Antrean box Sub Assy dari pengambilan Supply. Print kanban berarti menyelesaikan produksi 1 pallet/box.',
+    subtitleEn: 'Sub Assy box queue from Supply picking. Printing a kanban completes the production of 1 pallet/box.',
     productionPath: '/production/sub-assy',
     device: 'Tablet Sub Assy 02',
   },
@@ -60,6 +63,7 @@ const copy: Record<
 export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
   const navigate = useNavigate()
   const { user, activeLine, activeWorkArea } = useAuth()
+  const { t } = usePreferences()
   const { items, audit, printKanban, moveItem, cyclePriority } = useQueue()
   const isAdmin = user?.role === 'admin'
   const userLine: RobotLine = user?.productionLine ??
@@ -74,16 +78,17 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
       (activeWorkArea?.type === type || user.role === 'leader'),
   )
   const [message, setMessage] = useState('')
+  const [messageTone, setMessageTone] = useState<'success' | 'warning'>('warning')
   const [printedBox, setPrintedBox] = useState<CompletedBox | null>(null)
-  const [processFilter, setProcessFilter] = useState('Semua proses')
+  const [processFilter, setProcessFilter] = useState(t('Semua proses', 'All Processes'))
   useEffect(() => {
     if (!printedBox) return
     document.body.classList.add('printing-kanban')
     return () => document.body.classList.remove('printing-kanban')
   }, [printedBox])
   useEffect(() => {
-    setProcessFilter('Semua proses')
-  }, [activeLine, activeWorkArea?.id])
+    setProcessFilter(t('Semua proses', 'All Processes'))
+  }, [activeLine, activeWorkArea?.id, t])
 
   const queue = items.filter(
     (item) =>
@@ -100,7 +105,7 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
           item.targetShift === activeShift),
   )
   const visibleQueue =
-    type === 'Sub Assy' && processFilter !== 'Semua proses'
+    type === 'Sub Assy' && processFilter !== t('Semua proses', 'All Processes')
       ? queue.filter((item) => item.process === processFilter)
       : queue
   const urgent = queue.filter((item) => item.priority === 'urgent').length
@@ -123,48 +128,53 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
     .slice(0, 6)
   const meta = copy[type]
   const reorderProcess =
-    processFilter === 'Semua proses'
+    processFilter === t('Semua proses', 'All Processes')
       ? activeWorkArea?.process
       : processFilter
 
   const handlePrint = async (id: string) => {
     if (!user || !activeShift) return
-    setMessage('Mencetak kanban dan menyimpan hasil ke server…')
+    setMessageTone('warning')
+    setMessage(t('Mencetak kanban dan menyimpan hasil ke server…', 'Printing kanban and saving the result to the server…'))
     const result = await printKanban(id, user.name, user.role, activeShift, userLine)
     if (!result.ok || !result.box) {
-      setMessage(result.error ?? 'Kanban tidak ditemukan di antrian.')
+      setMessage(result.error ?? t('Kanban tidak ditemukan di antrian.', 'Kanban not found in the queue.'))
       return
     }
     if (!parseKanbanBarcode(result.box.kanban)) {
-      setMessage('Kanban tersimpan, tetapi payload barcode yang diterima tidak valid.')
+      setMessage(t('Kanban tersimpan, tetapi payload barcode yang diterima tidak valid.', 'Kanban saved, but the received barcode payload is invalid.'))
       return
     }
     setPrintedBox(result.box)
+    setMessageTone('success')
     setMessage(
-      `Kanban ${result.box.partNumber} berhasil dicetak (${result.completedKanbans}/${result.totalKanbans}). ${result.box.qty} pcs tercatat sebagai OK.`,
+      `${t('Kanban', 'Kanban')} ${result.box.partNumber} ${t('berhasil dicetak', 'printed successfully')} (${result.completedKanbans}/${result.totalKanbans}). ${result.box.qty} pcs ${t('tercatat sebagai OK.', 'recorded as OK.')}`,
     )
   }
 
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Production Control"
-        title={meta.title}
+        eyebrow={t('Production Control', 'Production Control')}
+        title={t(meta.titleId, meta.titleEn)}
         subtitle={
           isAdmin
-            ? `Mode pemantauan: lihat progres antrean ${activeLine === 'all' ? 'semua robot' : activeLine} ${type}. Admin tidak dapat mencetak kanban atau mengubah antrean.`
-            : meta.subtitle
+            ? t(
+                `Mode pemantauan: lihat progres antrean ${activeLine === 'all' ? 'semua robot' : activeLine} ${type}. Admin tidak dapat mencetak kanban atau mengubah antrean.`,
+                `Monitoring mode: view the queue progress for ${activeLine === 'all' ? 'all robots' : activeLine} ${type}. Admin cannot print kanban or change the queue.`,
+              )
+            : t(meta.subtitleId, meta.subtitleEn)
         }
         meta={
           <>
             <span className="page-meta__item">
-              <Flame size={12} /> {isAdmin ? (activeLine === 'all' ? 'Semua robot' : activeLine) : activeWorkArea?.label ?? userLine} — {type}{!isAdmin && activeShift ? ` · Shift ${activeShift}` : ''}
+              <Flame size={12} /> {isAdmin ? (activeLine === 'all' ? t('Semua robot', 'All Robots') : activeLine) : activeWorkArea?.label ?? userLine} — {type}{!isAdmin && activeShift ? ` · ${t('Shift', 'Shift')} ${activeShift}` : ''}
             </span>
             <span className="page-meta__item">
-              <ListOrdered size={12} /> {canOperateQueue ? 'Urutan bisa diatur operator' : 'Mode pemantauan'}
+              <ListOrdered size={12} /> {canOperateQueue ? t('Urutan bisa diatur operator', 'Order can be adjusted by operator') : t('Mode pemantauan', 'Monitoring mode')}
             </span>
             <span className="page-meta__item">
-              <Clock3 size={12} /> Update {queue[0]?.time ?? '—'}
+              <Clock3 size={12} /> {t('Update', 'Update')} {queue[0]?.time ?? '—'}
             </span>
           </>
         }
@@ -174,24 +184,29 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
             leftIcon={<Play size={15} />}
             onClick={() => navigate(meta.productionPath)}
           >
-            Mulai produksi
+            {t('Mulai produksi', 'Start Production')}
           </Button>
         )}
       />
 
       {isAdmin && (
-        <Callout tone="info" title="Akses Admin: pemantauan saja">
-          Anda dapat melihat status dan progres produksi, tetapi tidak dapat mencetak kanban,
-          mengubah prioritas, atau mengatur urutan antrean.
+        <Callout tone="info" title={t('Akses Admin: pemantauan saja', 'Admin Access: Monitoring Only')}>
+          {t(
+            'Anda dapat melihat status dan progres produksi, tetapi tidak dapat mencetak kanban, mengubah prioritas, atau mengatur urutan antrean.',
+            'You can view production status and progress, but cannot print kanban, change priority, or adjust the queue order.',
+          )}
         </Callout>
       )}
       {!isAdmin && !activeShift && (
-        <Callout tone="warning" title="User Non-shift">
-        Akun ini tidak sedang dijadwalkan pada Shift 1 atau Shift 2. Aksi produksi dinonaktifkan.
+        <Callout tone="warning" title={t('User Non-shift', 'Non-shift User')}>
+          {t(
+            'Akun ini tidak sedang dijadwalkan pada Shift 1 atau Shift 2. Aksi produksi dinonaktifkan.',
+            'This account is not scheduled for Shift 1 or Shift 2. Production actions are disabled.',
+          )}
         </Callout>
       )}
 
-      {message && <Callout tone={message.includes('berhasil dicetak') ? 'success' : 'warning'}>{message}</Callout>}
+      {message && <Callout tone={messageTone}>{message}</Callout>}
 
       {printedBox && (() => {
         const payload = parseKanbanBarcode(printedBox.kanban)
@@ -200,12 +215,12 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
           <section className="card kanban-printable">
             <div className="section-head kanban-print-actions">
               <div>
-                <h2 className="section-title">Kanban siap dicetak</h2>
-                <p className="section-sub">QR memuat semua data Kanban dan tidak memakai nomor cetak unik.</p>
+                <h2 className="section-title">{t('Kanban siap dicetak', 'Kanban Ready to Print')}</h2>
+                <p className="section-sub">{t('QR memuat semua data Kanban dan tidak memakai nomor cetak unik.', 'The QR contains all Kanban data and does not use a unique print number.')}</p>
               </div>
               <div className="row">
-                <Button variant="secondary" onClick={() => setPrintedBox(null)}>Tutup</Button>
-                <Button variant="primary" leftIcon={<Printer size={14} />} onClick={() => window.print()}>Cetak label</Button>
+                <Button variant="secondary" onClick={() => setPrintedBox(null)}>{t('Tutup', 'Close')}</Button>
+                <Button variant="primary" leftIcon={<Printer size={14} />} onClick={() => window.print()}>{t('Cetak label', 'Print Label')}</Button>
               </div>
             </div>
             <div className="kanban-print-label">
@@ -226,7 +241,7 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
               </div>
               <div className="kanban-print-label__qr">
                 <QRCodeSVG value={printedBox.kanban} size={180} level="M" />
-                <small>Scan untuk membaca seluruh payload Kanban</small>
+                <small>{t('Scan untuk membaca seluruh payload Kanban', 'Scan to read the entire Kanban payload')}</small>
               </div>
             </div>
           </section>
@@ -235,50 +250,50 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
 
       <div className="kpi-grid">
         <StatCard
-          label="Antrian aktif"
+          label={t('Antrian aktif', 'Active Queue')}
           value={String(queue.length)}
           suffix="box"
           icon={ListOrdered}
           tone="orange"
-          note="Menunggu dikerjakan"
+          note={t('Menunggu dikerjakan', 'Waiting to be processed')}
         />
         <StatCard
-          label="Prioritas urgent"
+          label={t('Prioritas urgent', 'Urgent Priority')}
           value={String(urgent)}
           suffix="box"
           icon={TriangleAlert}
           tone="red"
-          note="Perlu didahulukan"
+          note={t('Perlu didahulukan', 'Needs to be prioritized')}
         />
         <StatCard
-          label="Total qty"
+          label={t('Total qty', 'Total Qty')}
           value={formatNumber(totalTaken)}
           suffix="pcs"
           icon={PackageSearch}
           tone="sky"
-          note="Siap produksi"
+          note={t('Siap produksi', 'Ready for production')}
         />
         <StatCard
-          label="Rata-rata tunggu"
-          value={type === 'Assy' ? '18' : '27'}
-          suffix="mnt"
+          label={t('Kanban tercetak', 'Printed Kanban')}
+          value={String(queue.reduce((sum, item) => sum + (item.printedKanbans ?? 0), 0))}
+          suffix={t('box', 'box')}
           icon={Timer}
           tone="amber"
-          note="Sejak masuk antrian"
+          note={t('Dari database produksi', 'From the production database')}
         />
       </div>
 
       <div className="row row--wrap">
         {type === 'Sub Assy' && (
           <div className="field" style={{ maxWidth: 260 }}>
-            <label className="field-label" htmlFor="sub-assy-process-filter">Line proses</label>
+            <label className="field-label" htmlFor="sub-assy-process-filter">{t('Line proses', 'Process Line')}</label>
             <select
               id="sub-assy-process-filter"
               className="select"
               value={processFilter}
               onChange={(event) => setProcessFilter(event.target.value)}
             >
-              <option>Semua proses</option>
+              <option value={t('Semua proses', 'All Processes')}>{t('Semua proses', 'All Processes')}</option>
               {Array.from(new Set(queue.map((item) => item.process).filter((process): process is string => Boolean(process))))
                 .sort((a, b) => a.localeCompare(b))
                 .map((process) => (
@@ -308,7 +323,7 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
                   <div>
                     <h3>{item.partNumber}</h3>
                     <span>
-                      {item.line} · {item.model} · {type} · Antrian #{item.no}
+                      {item.line} · {item.model} · {type} · {t('Antrian', 'Queue')} #{item.no}
                       {item.targetShift && ` · Shift ${item.targetShift}`}
                       {item.process && ` · ${item.process}`}
                     </span>
@@ -318,22 +333,22 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
 
                 <div className="queue-card__metrics">
                   <div>
-                    <span>Sisa pesanan</span>
+                    <span>{t('Sisa pesanan', 'Remaining Order')}</span>
                     <strong>{formatNumber(remainingQty)} pcs</strong>
                   </div>
                   <div>
-                    <span>Kanban tercetak</span>
+                    <span>{t('Kanban tercetak', 'Printed Kanban')}</span>
                     <strong>{item.printedKanbans ?? 0}/{totalKanbans}</strong>
                   </div>
                   <div>
-                    <span>Qty / Kanban</span>
-                    <strong>{kanbanQuantity ? `${kanbanQuantity} pcs` : 'Belum diatur'}</strong>
+                    <span>{t('Qty / Kanban', 'Qty / Kanban')}</span>
+                    <strong>{kanbanQuantity ? `${kanbanQuantity} pcs` : t('Belum diatur', 'Not set')}</strong>
                   </div>
                 </div>
 
                 <div>
                   <div className="progress-meta" style={{ marginTop: 0, marginBottom: 5 }}>
-                    <span>Stok vs sisa pesanan</span>
+                    <span>{t('Stok vs sisa pesanan', 'Stock vs remaining order')}</span>
                     <span>{stockRatio.toFixed(0)}%</span>
                   </div>
                   <ProgressBar
@@ -355,9 +370,9 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
                           void cyclePriority(item.id, user.role, activeShift, userLine)
                         }
                       }}
-                      title="Ubah prioritas antrian"
+                      title={t('Ubah prioritas antrian', 'Change queue priority')}
                     >
-                      Prioritas
+                      {t('Prioritas', 'Priority')}
                     </Button>
                     <Button
                       variant="ghost"
@@ -373,8 +388,8 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
                         )
                       }
                       disabled={index === 0}
-                      title="Naikkan urutan"
-                      aria-label="Naikkan urutan"
+                      title={t('Naikkan urutan', 'Move up')}
+                      aria-label={t('Naikkan urutan', 'Move up')}
                     >
                       <ArrowUp size={14} />
                     </Button>
@@ -392,8 +407,8 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
                         )
                       }
                       disabled={index === visibleQueue.length - 1}
-                      title="Turunkan urutan"
-                      aria-label="Turunkan urutan"
+                      title={t('Turunkan urutan', 'Move down')}
+                      aria-label={t('Turunkan urutan', 'Move down')}
                     >
                       <ArrowDown size={14} />
                     </Button>
@@ -410,8 +425,8 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
                     onClick={() => void handlePrint(item.id)}
                   >
                     {nextKanbanQty
-                      ? `Cetak Kanban ${Math.min((item.printedKanbans ?? 0) + 1, totalKanbans)}/${totalKanbans} · ${nextKanbanQty} pcs`
-                      : `Qty Kanban ${item.partNumber} belum diatur`}
+                      ? `${t('Cetak Kanban', 'Print Kanban')} ${Math.min((item.printedKanbans ?? 0) + 1, totalKanbans)}/${totalKanbans} · ${nextKanbanQty} pcs`
+                      : `${t('Qty Kanban', 'Kanban Qty')} ${item.partNumber} ${t('belum diatur', 'not set')}`}
                   </Button>
                 )}
               </article>
@@ -424,11 +439,17 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
             <div className="empty-state__icon">
               <ListOrdered size={22} />
             </div>
-            <strong>Antrian {type} kosong</strong>
+            <strong>{t('Antrian', 'Queue')} {type} {t('kosong', 'empty')}</strong>
             <p>
               {queue.length === 0
-                ? `Belum ada box yang menunggu. Antrian akan terisi otomatis saat Supply melakukan scan kanban ${type}.`
-                : `Tidak ada antrian Sub Assy untuk line proses ${processFilter}.`}
+                ? t(
+                    `Belum ada box yang menunggu. Antrian akan terisi otomatis saat Supply melakukan scan kanban ${type}.`,
+                    `No boxes waiting yet. The queue will fill automatically when Supply scans the ${type} kanban.`,
+                  )
+                : t(
+                    `Tidak ada antrian Sub Assy untuk line proses ${processFilter}.`,
+                    `No Sub Assy queue for process line ${processFilter}.`,
+                  )}
             </p>
           </div>
         </section>
@@ -438,10 +459,12 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
         <section className="card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Riwayat perubahan antrian</h2>
-              <p className="section-sub">Aktivitas terbaru · {activeWorkArea?.label ?? (activeLine === 'all' ? 'semua line' : activeLine)}</p>
+              <h2 className="section-title">{t('Riwayat perubahan antrian', 'Queue Change History')}</h2>
+              <p className="section-sub">
+                {t('Aktivitas terbaru', 'Recent activity')} · {activeWorkArea?.label ?? (activeLine === 'all' ? t('semua line', 'all lines') : activeLine)}
+              </p>
             </div>
-            <Badge tone="neutral">{entries.length} aktivitas</Badge>
+            <Badge tone="neutral">{entries.length} {t('aktivitas', 'activities')}</Badge>
           </div>
 
           {entries.length > 0 ? (
@@ -461,7 +484,7 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
             </div>
           ) : (
             <span className="small muted">
-              Belum ada perubahan. Scan Supply dan penyesuaian urutan akan tercatat di sini.
+              {t('Belum ada perubahan. Scan Supply dan penyesuaian urutan akan tercatat di sini.', 'No changes yet. Supply scans and order adjustments will be recorded here.')}
             </span>
           )}
         </section>
@@ -470,9 +493,9 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
           <section className="card">
             <div className="section-head">
               <div>
-                <h2 className="section-title">Aturan antrean {type}</h2>
+                <h2 className="section-title">{t('Aturan antrean', 'Queue Rules')} {type}</h2>
                 <p className="section-sub">
-                  {isAdmin ? 'Mode pemantauan saja' : 'Print = selesai produksi'}
+                  {isAdmin ? t('Mode pemantauan saja', 'Monitoring only') : t('Print = selesai produksi', 'Print = production complete')}
                 </p>
               </div>
             </div>
@@ -480,38 +503,46 @@ export function ProductionQueuePage({ type }: ProductionQueuePageProps) {
             <div className="stack">
             <Callout
               tone="info"
-              title={isAdmin ? 'Informasi progres produksi' : 'Print kanban = selesai 1 box'}
+              title={isAdmin ? t('Informasi progres produksi', 'Production Progress Info') : t('Print kanban = selesai 1 box', 'Print kanban = 1 box complete')}
             >
               {isAdmin
-                ? 'Operator yang berwenang mencetak kanban untuk menyelesaikan produksi per box. Admin hanya memantau progresnya.'
-                : 'Satu klik Print mencetak kanban, menyelesaikan produksi 1 pallet/box, dan mencatat qty standar sebagai OK.'}
+                ? t(
+                    'Operator yang berwenang mencetak kanban untuk menyelesaikan produksi per box. Admin hanya memantau progresnya.',
+                    'Authorized operators print kanban to complete production per box. Admin only monitors progress.',
+                  )
+                : t(
+                    'Satu klik Print mencetak kanban, menyelesaikan produksi 1 pallet/box, dan mencatat qty standar sebagai OK.',
+                    'One click on Print prints the kanban, completes production of 1 pallet/box, and records standard qty as OK.',
+                  )}
               </Callout>
               {!isAdmin && (
-                <Callout tone="warning" title="Operator boleh menyesuaikan">
-              Urutan dan prioritas antrian dapat diubah operator sesuai kebutuhan. Setiap
-              perubahan tercatat pada riwayat di samping.
+                <Callout tone="warning" title={t('Operator boleh menyesuaikan', 'Operator may adjust')}>
+              {t(
+                'Urutan dan prioritas antrian dapat diubah operator sesuai kebutuhan. Setiap perubahan tercatat pada riwayat di samping.',
+                'Queue order and priority can be adjusted by the operator as needed. Every change is recorded in the history next to it.',
+              )}
                 </Callout>
               )}
               <div className="glass-inset" style={{ padding: 14 }}>
                 <div className="info-grid">
                   <div className="info-item">
-                    <span className="info-label">Operator</span>
-                    <span className="info-value info-value--strong">{user?.name ?? 'Operator'}</span>
+                    <span className="info-label">{t('Operator', 'Operator')}</span>
+                    <span className="info-value info-value--strong">{user?.name ?? t('Operator', 'Operator')}</span>
                   </div>
                   <div className="info-item">
-                    <span className="info-label">Device</span>
+                    <span className="info-label">{t('Device', 'Device')}</span>
                     <span className="info-value">{meta.device}</span>
                   </div>
                   <div className="info-item">
-                    <span className="info-label">Line</span>
+                    <span className="info-label">{t('Line', 'Line')}</span>
                     <span className="info-value">
-                      {isAdmin ? (activeLine === 'all' ? 'Semua robot' : activeLine) : userLine} — {type}
+                      {isAdmin ? (activeLine === 'all' ? t('Semua robot', 'All Robots') : activeLine) : userLine} — {type}
                     </span>
                   </div>
                   <div className="info-item">
-                    <span className="info-label">Akses</span>
+                    <span className="info-label">{t('Akses', 'Access')}</span>
                     <span className="info-value">
-                      {isAdmin ? 'Pemantauan saja' : `Aksi antrian ${type}`}
+                      {isAdmin ? t('Pemantauan saja', 'Monitoring only') : `${t('Aksi antrian', 'Queue Actions')} ${type}`}
                     </span>
                   </div>
                 </div>

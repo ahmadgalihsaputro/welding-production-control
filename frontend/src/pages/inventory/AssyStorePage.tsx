@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { ProgressBar } from '../../components/ui/ProgressBar'
 import { StatCard } from '../../components/ui/StatCard'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { stockItems, inventoryTrend } from '../../data/mock'
 import { getProductionPart } from '../../data/productionLines'
 import { formatNumber } from '../../lib/utils'
@@ -21,6 +22,7 @@ const movements = [
 
 export function AssyStorePage() {
   const { activeLine } = useAuth()
+  const { t, formatDate } = usePreferences()
   const assyItems = stockItems.filter((item) => {
     if (item.category !== 'Assy') return false
     const line =

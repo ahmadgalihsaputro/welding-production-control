@@ -80,6 +80,23 @@ export function describeApiError(error: unknown, fallback = 'Terjadi kesalahan. 
   return fallback
 }
 
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const token = getToken()
+  const response = await fetch(`${BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  })
+  if (!response.ok) {
+    throw new ApiError(`Unduhan gagal (HTTP ${response.status}).`, response.status)
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>

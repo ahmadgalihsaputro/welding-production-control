@@ -254,7 +254,7 @@ di `App.tsx`, dan (jika perlu) entri menu di `data/navigation.ts` + `config/acce
 | Master Data | `/master/structure`, `/master/models`, `/master/parts`, `/master/bom`, `/master/routing`, `/master/machines`, `/master/stock-policy`, `/master/locations`, `/master/shifts`, `/master/kanban` |
 | Reports | `/reports/production`, `/reports/inventory`, `/reports/material-usage`, `/reports/ng`, `/reports/transactions` |
 | Users | `/users/list`, `/users/roles`, `/users/devices` |
-| Settings | `/settings/profile`, `/settings/preferences`, `/settings/notifications`, `/settings/integration`, `/settings/printing`, `/settings/security`, `/settings/backup` |
+| Settings | `/settings/profile`, `/settings/preferences`, `/settings/notifications`, `/settings/printing`, `/settings/backup` |
 
 Hak akses diatur di `src/data/navigation.ts` (menu) dan `src/config/access.ts` (route). Route yang
 tidak diizinkan akan menampilkan halaman **“Akses dibatasi”**, bukan error.
@@ -284,9 +284,8 @@ Untuk mengganti logo, ganti isi `src/assets/flame.svg` (dipakai inline oleh `Fla
 
 ## 8. Catatan implementasi
 
-- **Data campuran**: alur inti produksi memakai backend; halaman lain masih memakai data demo.
-  Aksi seperti tambah model/user, ubah status, stock adjustment, backup, dan sync FSS belum
-  tersimpan ke database.
+- **Data**: alur inti produksi, pengaturan, dan Jadwal Assy memakai backend/database. Sebagian
+  halaman laporan masih memakai data demo.
 - **Auth**: kredensial divalidasi backend dan token dipakai pada setiap request API. Sesi divalidasi
   ulang lewat `GET /api/auth/me` saat aplikasi dibuka.
 - **Chart**: dibuat dengan SVG agar ringan, responsif, dan mudah disesuaikan tanpa dependency chart

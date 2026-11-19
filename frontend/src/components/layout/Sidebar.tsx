@@ -2,8 +2,10 @@ import { ChevronDown, LogOut } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import {
   findGroupByPath,
+  navigationEn,
   sectionLabels,
   visibleNavigation,
   type NavGroup,
@@ -19,8 +21,15 @@ interface SidebarProps {
 
 const order: NavGroup['section'][] = ['main', 'insight', 'admin']
 
+const sectionEn: Record<NavGroup['section'], string> = {
+  main: 'Workspace',
+  insight: 'Insight',
+  admin: 'Administration',
+}
+
 export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
   const { user, logout } = useAuth()
+  const { t } = usePreferences()
   const location = useLocation()
   const navigate = useNavigate()
   const [openGroups, setOpenGroups] = useState<string[]>([])
@@ -67,7 +76,9 @@ export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
 
           return (
             <div className="nav-section" key={section}>
-              <div className="nav-label">{sectionLabels[section]}</div>
+              <div className="nav-label">
+                {t(sectionLabels[section], sectionEn[section])}
+              </div>
 
               {sectionGroups.map((group) => {
                 const Icon = group.icon
@@ -81,12 +92,12 @@ export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
                       to={group.path}
                       end={group.path === '/'}
                       className={({ isActive }) => `nav-item${isActive ? ' is-active' : ''}`}
-                      data-tooltip={collapsed && !isMobile ? group.label : undefined}
+                      data-tooltip={collapsed && !isMobile ? t(group.label, navigationEn[group.label] ?? group.label) : undefined}
                     >
                       <span className="nav-icon">
                         <Icon />
                       </span>
-                      <span className="nav-copy">{group.label}</span>
+                      <span className="nav-copy">{t(group.label, navigationEn[group.label] ?? group.label)}</span>
                     </NavLink>
                   )
                 }
@@ -101,12 +112,12 @@ export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
                       className="nav-item"
                       onClick={() => toggleGroup(group)}
                       aria-expanded={isOpen}
-                      data-tooltip={collapsed && !isMobile ? group.label : undefined}
+                      data-tooltip={collapsed && !isMobile ? t(group.label, navigationEn[group.label] ?? group.label) : undefined}
                     >
                       <span className="nav-icon">
                         <Icon />
                       </span>
-                      <span className="nav-copy">{group.label}</span>
+                      <span className="nav-copy">{t(group.label, navigationEn[group.label] ?? group.label)}</span>
                       {group.items?.some((item) => item.badge) && (
                         <span className="nav-badge">
                           {group.items.find((item) => item.badge)?.badge}
@@ -128,7 +139,7 @@ export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
                               `nav-sublink${isActive ? ' is-active' : ''}`
                             }
                           >
-                            <span>{item.label}</span>
+                            <span>{t(item.label, navigationEn[item.label] ?? item.label)}</span>
                             {item.badge && (
                               <span className="nav-badge">{item.badge}</span>
                             )}
@@ -147,8 +158,8 @@ export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
       <div className="sidebar-status">
         <span className="line-dot" />
         <div>
-          <strong>Sistem online</strong>
-          <span>FSS sync 07:00</span>
+          <strong>{t('Sistem online', 'System online')}</strong>
+          <span>{t('Database terhubung', 'Database connected')}</span>
         </div>
       </div>
 
@@ -167,7 +178,7 @@ export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
         </NavLink>
         <button type="button" className="logout-btn" onClick={handleLogout}>
           <LogOut size={15} />
-          <span>Logout</span>
+          <span>{t('Logout', 'Logout')}</span>
         </button>
       </div>
     </aside>

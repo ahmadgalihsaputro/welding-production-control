@@ -6,6 +6,7 @@ import { Callout } from '../../components/ui/Callout'
 import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { StatusBadge } from '../../components/ui/StatusBadge'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { formatNumber } from '../../lib/utils'
 
 interface ReturnEntry {
@@ -22,7 +23,15 @@ const initialReturns: ReturnEntry[] = [
   { id: 'rt-2', code: 'RK-0090', partNumber: '50162B000P', qty: 35, status: 'received', time: '08:50' },
 ]
 
+const reasonEnglish: Record<string, string> = {
+  'Sisa produksi': 'Production remainder',
+  'Perubahan jadwal': 'Schedule change',
+  'Material tidak sesuai': 'Material mismatch',
+  'Box rusak': 'Damaged box',
+}
+
 export function MaterialReturnPage() {
+  const { t } = usePreferences()
   const [returns, setReturns] = useState(initialReturns)
   const [qty, setQty] = useState(18)
   const [reason, setReason] = useState('Sisa produksi')

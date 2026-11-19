@@ -312,3 +312,37 @@ svg {
     scroll-behavior: auto !important;
   }
 }
+
+html[data-reduce-motion='true'] *,
+html[data-reduce-motion='true'] *::before,
+html[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+html[data-density='compact'] .data-table td {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+html[data-density='compact'] .data-table th {
+  padding: 7px 12px;
+}
+
+html[data-density='compact'] .card {
+  padding: 16px;
+}
+
+html[data-density='spacious'] .data-table td {
+  padding: 18px 16px;
+}
+
+html[data-density='spacious'] .data-table th {
+  padding: 14px 16px;
+}
+
+html[data-density='spacious'] .card {
+  padding: 28px;
+}

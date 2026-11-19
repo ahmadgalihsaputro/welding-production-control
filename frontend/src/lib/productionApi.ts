@@ -2,6 +2,7 @@ import { api } from './api'
 import type {
   CompletedBox,
   NgShiftRecord,
+  ProdStatus,
   ProductionRequest,
   ProductionShiftRecord,
   QueueAuditEntry,
@@ -9,6 +10,7 @@ import type {
   QueuePriority,
   QueueType,
   RobotLine,
+  ScheduleItem,
   ScannedKanban,
   ShiftNumber,
 } from '../types'
@@ -245,6 +247,72 @@ export function mapNgShiftRecord(record: ApiNgShiftRecord): NgShiftRecord {
     updatedAtEpoch:
       record.updatedAtEpoch === null ? undefined : Number(record.updatedAtEpoch),
   }
+}
+
+export interface ApiScheduleItem {
+  id: string
+  partNumber: string
+  model: string
+  target: number
+  actual: number
+  status: string
+  shift: number
+  dueTime: string
+  line: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export function mapScheduleItem(item: ApiScheduleItem): ScheduleItem {
+  return {
+    id: item.id,
+    partNumber: item.partNumber,
+    model: item.model,
+    target: item.target,
+    actual: item.actual,
+    status: (['running', 'waiting', 'complete', 'paused'] as string[]).includes(item.status)
+      ? (item.status as ProdStatus)
+      : 'waiting',
+    shift: item.shift === 2 ? 2 : 1,
+    dueTime: item.dueTime,
+    line: item.line,
+    updatedAt: item.updatedAt,
+  }
+}
+
+export interface ScheduleInput {
+  partNumber: string
+  model: string
+  target: number
+  shift: 1 | 2
+  dueTime: string
+  line: string
+}
+
+export async function listSchedules(params?: { line?: string; shift?: number }): Promise<ScheduleItem[]> {
+  const query = new URLSearchParams()
+  if (params?.line && params.line !== 'all') query.set('line', params.line)
+  if (params?.shift) query.set('shift', String(params.shift))
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  const items = await api.get<ApiScheduleItem[]>(`/production/schedules${suffix}`)
+  return items.map(mapScheduleItem)
+}
+
+export async function createSchedule(input: ScheduleInput): Promise<ScheduleItem> {
+  const item = await api.post<ApiScheduleItem>('/production/schedules', input)
+  return mapScheduleItem(item)
+}
+
+export async function updateSchedule(
+  id: string,
+  input: Partial<ScheduleInput> & { actual?: number; status?: ProdStatus },
+): Promise<ScheduleItem> {
+  const item = await api.patch<ApiScheduleItem>(`/production/schedules/${id}`, input)
+  return mapScheduleItem(item)
+}
+
+export async function deleteSchedule(id: string): Promise<void> {
+  await api.delete(`/production/schedules/${id}`)
 }
 
 export async function loadProductionState() {

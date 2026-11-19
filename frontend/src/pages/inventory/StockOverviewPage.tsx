@@ -22,21 +22,22 @@ import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Tabs } from '../../components/ui/Tabs'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { stockItems } from '../../data/mock'
 import { getProductionPart } from '../../data/productionLines'
 import type { StockItem } from '../../types'
 import { formatNumber } from '../../lib/utils'
 
-const statusTabs = [
-  { value: 'all', label: 'Semua' },
-  { value: 'safe', label: 'Aman' },
-  { value: 'low', label: 'Low stock' },
-  { value: 'full', label: 'Full store' },
-]
-
 export function StockOverviewPage() {
   const navigate = useNavigate()
   const { activeLine } = useAuth()
+  const { t } = usePreferences()
+  const statusTabs = [
+    { value: 'all', label: t('Semua', 'All') },
+    { value: 'safe', label: t('Aman', 'Safe') },
+    { value: 'low', label: 'Low stock' },
+    { value: 'full', label: 'Full store' },
+  ]
   const [status, setStatus] = useState('all')
   const [category, setCategory] = useState('all')
   const [search, setSearch] = useState('')
@@ -67,11 +68,11 @@ export function StockOverviewPage() {
   const totalQty = lineStockItems.reduce((sum, item) => sum + item.store + item.buffer, 0)
   const lowStock = lineStockItems.filter((item) => item.status === 'low').length
   const fullStore = lineStockItems.filter((item) => item.status === 'full').length
-  const lineLabel = activeLine === 'all' ? 'semua line' : activeLine
+  const lineLabel = activeLine === 'all' ? t('semua line', 'all lines') : activeLine
   const inventoryHealthData = [
-    { label: 'Aman', value: lineStockItems.filter((item) => item.status === 'safe').length, color: '#10b981' },
+    { label: t('Aman', 'Safe'), value: lineStockItems.filter((item) => item.status === 'safe').length, color: '#10b981' },
     { label: 'Low stock', value: lowStock, color: '#f97316' },
-    { label: 'Kosong', value: lineStockItems.filter((item) => item.status === 'empty').length, color: '#ef4444' },
+    { label: t('Kosong', 'Empty'), value: lineStockItems.filter((item) => item.status === 'empty').length, color: '#ef4444' },
     { label: 'Full store', value: fullStore, color: '#38bdf8' },
   ]
 
@@ -86,10 +87,10 @@ export function StockOverviewPage() {
         </div>
       ),
     },
-    { key: 'category', header: 'Kategori', render: (item) => <Badge tone="neutral">{item.category}</Badge> },
+    { key: 'category', header: t('Kategori', 'Category'), render: (item) => <Badge tone="neutral">{item.category}</Badge> },
     {
       key: 'location',
-      header: 'Lokasi',
+      header: t('Lokasi', 'Location'),
       render: (item) => <span className="stock-location">{item.location}</span>,
     },
     {
@@ -137,22 +138,25 @@ export function StockOverviewPage() {
     <div className="page">
       <PageHeader
         eyebrow="Inventory Control"
-        title="Stock Overview"
-        subtitle={`Sumber kebenaran stok untuk ${lineLabel}. Buffer dan Store dipisahkan, lengkap dengan standard packaging, safety stock, dan Max Store per part number.`}
+        title={t('Ringkasan Stok', 'Stock Overview')}
+        subtitle={`${t('Sumber kebenaran stok untuk', 'Single source of truth for stock in')} ${lineLabel}. ${t(
+          'Buffer dan Store dipisahkan, lengkap dengan standard packaging, safety stock, dan Max Store per part number.',
+          'Buffer and Store are kept separate, complete with standard packaging, safety stock, and Max Store per part number.',
+        )}`}
         meta={
           <>
             <span className="page-meta__item">
               <Warehouse size={12} /> Buffer &amp; Store
             </span>
             <span className="page-meta__item">
-              <Boxes size={12} /> {lineStockItems.length} part number
+              <Boxes size={12} /> {lineStockItems.length} {t('part number', 'part numbers')}
             </span>
           </>
         }
         actions={
           <>
             <Button variant="secondary" leftIcon={<Download size={15} />}>
-              Export stok
+              {t('Export stok', 'Export stock')}
             </Button>
             <Button
               variant="primary"
@@ -167,15 +171,15 @@ export function StockOverviewPage() {
 
       <div className="kpi-grid">
         <StatCard
-          label="Total part number"
+          label={t('Total part number', 'Total part numbers')}
           value={String(lineStockItems.length)}
           suffix="PN"
           icon={Boxes}
           tone="sky"
-          note="Assy, Sub Assy & external"
+          note={t('Assy, Sub Assy & external', 'Assy, Sub Assy & external')}
         />
         <StatCard
-          label="Total qty stok"
+          label={t('Total qty stok', 'Total stock qty')}
           value={formatNumber(totalQty)}
           suffix="pcs"
           icon={Warehouse}
@@ -188,7 +192,7 @@ export function StockOverviewPage() {
           suffix="PN"
           icon={TriangleAlert}
           tone="red"
-          note="Di bawah safety stock"
+          note={t('Di bawah safety stock', 'Below safety stock')}
         />
         <StatCard
           label="Full store"
@@ -196,7 +200,7 @@ export function StockOverviewPage() {
           suffix="PN"
           icon={PackageMinus}
           tone="amber"
-          note="Mencapai Max Store"
+          note={t('Mencapai Max Store', 'Reached Max Store')}
         />
       </div>
 
@@ -204,15 +208,15 @@ export function StockOverviewPage() {
         <section className="card chart-card">
           <div className="chart-card__head">
             <div>
-              <h2 className="section-title">Stok per part number</h2>
-              <p className="section-sub">Store vs Buffer (pcs)</p>
+              <h2 className="section-title">{t('Stok per part number', 'Stock per part number')}</h2>
+              <p className="section-sub">{t('Store vs Buffer (pcs)', 'Store vs Buffer (pcs)')}</p>
             </div>
             <Badge tone="neutral">Top 6</Badge>
           </div>
           <BarChart
             labels={lineStockItems.slice(0, 6).map((item) => item.partNumber)}
             height={230}
-            ariaLabel="Grafik stok store dan buffer per part number"
+            ariaLabel={t('Grafik stok store dan buffer per part number', 'Store and buffer stock chart per part number')}
             series={[
               {
                 name: 'Store',
@@ -231,20 +235,20 @@ export function StockOverviewPage() {
         <section className="card section-card">
           <div className="section-head">
             <div>
-              <h2 className="section-title">Kesehatan stok</h2>
-              <p className="section-sub">Status seluruh PN</p>
+              <h2 className="section-title">{t('Kesehatan stok', 'Stock Health')}</h2>
+              <p className="section-sub">{t('Status seluruh PN', 'Status of all PNs')}</p>
             </div>
           </div>
           <DonutChart
             data={inventoryHealthData}
             size={172}
             centerValue={String(lineStockItems.length)}
-            centerLabel="part number"
+            centerLabel={t('part number', 'part numbers')}
           />
           {lowStock > 0 && (
             <Callout tone="danger" className="callout" style={{ marginTop: 14 }}>
               <span className="row" style={{ gap: 6 }}>
-                <TriangleAlert size={13} /> {lowStock} PN berada di bawah safety stock untuk line terpilih.
+                <TriangleAlert size={13} /> {lowStock} {t('PN berada di bawah safety stock untuk line terpilih.', 'PNs are below safety stock for the selected line.')}
               </span>
             </Callout>
           )}
@@ -254,16 +258,16 @@ export function StockOverviewPage() {
       <section className="card">
         <div className="table-toolbar">
           <div className="toolbar-group">
-            <Tabs items={statusTabs} value={status} onChange={setStatus} ariaLabel="Filter status stok" />
+            <Tabs items={statusTabs} value={status} onChange={setStatus} ariaLabel={t('Filter status stok', 'Filter stock status')} />
             <div className="select-wrap">
               <select
                 className="select"
                 style={{ width: 150, height: 38, minHeight: 38 }}
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
-                aria-label="Filter kategori"
+                aria-label={t('Filter kategori', 'Filter category')}
               >
-                <option value="all">Semua kategori</option>
+                <option value="all">{t('Semua kategori', 'All categories')}</option>
                 <option value="Assy">Assy</option>
                 <option value="Sub Assy">Sub Assy</option>
                 <option value="Press Part">Press Part</option>
@@ -275,7 +279,7 @@ export function StockOverviewPage() {
           <SearchInput
             value={search}
             onChange={setSearch}
-            placeholder="Cari part number…"
+            placeholder={t('Cari part number…', 'Search part number…')}
             className="search-inline"
           />
         </div>
@@ -288,11 +292,11 @@ export function StockOverviewPage() {
           footer={
             <>
               <span>
-                Menampilkan <strong>{rows.length}</strong> dari {lineStockItems.length} PN
+                {t('Menampilkan', 'Showing')} <strong>{rows.length}</strong> {t('dari', 'of')} {lineStockItems.length} PN
               </span>
               <span>
                 <PackageSearch size={12} style={{ display: 'inline', marginRight: 4 }} />
-                Stok update 09:40
+                {t('Stok update 09:40', 'Stock updated 09:40')}
               </span>
             </>
           }

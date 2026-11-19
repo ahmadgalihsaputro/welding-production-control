@@ -12,6 +12,7 @@ import { describeApiError } from '../../lib/api'
 import {
   createKanbanPartConfig,
   deleteKanbanPartConfig,
+  listDevices,
   listInventoryLocations,
   listKanbanPartConfigs,
   listMachines,
@@ -19,6 +20,7 @@ import {
   listRoutings,
   listStockPolicy,
   updateKanbanPartConfig,
+  type DeviceRecord,
   type InventoryLocationRecord,
   type KanbanPartConfigInput,
   type KanbanPartConfigRecord,
@@ -36,6 +38,7 @@ interface KanbanForm {
   storeLocation: string
   kanbanType: 'KD' | 'Reguler'
   nextProcess: string
+  printerId: string
 }
 
 function emptyForm(): KanbanForm {
@@ -47,6 +50,7 @@ function emptyForm(): KanbanForm {
     storeLocation: '',
     kanbanType: 'Reguler',
     nextProcess: '',
+    printerId: '',
   }
 }
 
@@ -58,6 +62,7 @@ function inputFromForm(form: KanbanForm): KanbanPartConfigInput {
     storeLocation: form.storeLocation,
     kanbanType: form.kanbanType,
     nextProcess: form.nextProcess,
+    printerId: form.printerId || null,
   }
 }
 
@@ -69,6 +74,7 @@ export function KanbanConfigPage() {
   const [machines, setMachines] = useState<MachineRecord[]>([])
   const [routings, setRoutings] = useState<RoutingRecord[]>([])
   const [stockItems, setStockItems] = useState<StockPolicyRecord[]>([])
+  const [devices, setDevices] = useState<DeviceRecord[]>([])
   const [form, setForm] = useState<KanbanForm | null>(null)
   const [previewConfig, setPreviewConfig] = useState<KanbanPartConfigRecord | null>(null)
   const [loading, setLoading] = useState(true)
@@ -79,6 +85,10 @@ export function KanbanConfigPage() {
   const activeParts = useMemo(
     () => parts.filter((part) => part.status === 'active' && !part.placeholder),
     [parts],
+  )
+  const printers = useMemo(
+    () => devices.filter((device) => device.type === 'Printer'),
+    [devices],
   )
   const selectedPart = activeParts.find((part) => part.partNumber === form?.partNumber)
   const selectedStock = stockItems.find((stock) => stock.partNumber === selectedPart?.partNumber)
@@ -118,13 +128,14 @@ export function KanbanConfigPage() {
     setLoading(true)
     setError('')
     try {
-      const [nextConfigs, nextParts, nextLocations, nextMachines, nextRoutings, nextStockItems] = await Promise.all([
+      const [nextConfigs, nextParts, nextLocations, nextMachines, nextRoutings, nextStockItems, nextDevices] = await Promise.all([
         listKanbanPartConfigs(),
         listParts({ status: 'active' }),
         listInventoryLocations(),
         listMachines(),
         listRoutings(),
         listStockPolicy(),
+        listDevices(),
       ])
       setConfigs(nextConfigs)
       setParts(nextParts)
@@ -132,6 +143,7 @@ export function KanbanConfigPage() {
       setMachines(nextMachines)
       setRoutings(nextRoutings)
       setStockItems(nextStockItems)
+      setDevices(nextDevices)
     } catch (loadError) {
       setError(describeApiError(loadError, 'Data konfigurasi Kanban gagal dimuat.'))
     } finally {
@@ -159,6 +171,7 @@ export function KanbanConfigPage() {
       storeLocation: config.storeLocation,
       kanbanType: config.kanbanType,
       nextProcess: config.nextProcess,
+      printerId: config.printerId ?? '',
     })
     setError('')
     setNotice('')
@@ -271,6 +284,18 @@ export function KanbanConfigPage() {
     { key: 'location', header: 'Store Location', render: (config) => config.storeLocation },
     { key: 'kanbanType', header: 'Tipe', render: (config) => <Badge tone={config.kanbanType === 'KD' ? 'orange' : 'neutral'}>{config.kanbanType}</Badge> },
     { key: 'nextProcess', header: 'Next Process', render: (config) => config.nextProcess },
+    {
+      key: 'printer',
+      header: 'Printer',
+      render: (config) => config.printer
+        ? (
+          <div className="cell-stack">
+            <span className="cell-main">{config.printer.name}</span>
+            <span className="cell-sub">{config.printer.model ?? 'Model belum diisi'}</span>
+          </div>
+        )
+        : <span className="muted small">Belum ditentukan</span>,
+    },
     {
       key: 'actions',
       header: 'Aksi',
@@ -412,6 +437,21 @@ export function KanbanConfigPage() {
                 {nextProcesses.map((process) => <option key={process} value={process}>{process}</option>)}
               </select>
             </Field>
+            <Field label="Printer Kanban" htmlFor="kanban-printer" hint="Terhubung ke Device Management. Kosongkan jika dicetak di printer default.">
+              <select
+                id="kanban-printer"
+                className="select"
+                value={form.printerId}
+                onChange={(event) => setForm((current) => current ? { ...current, printerId: event.target.value } : current)}
+              >
+                <option value="">Ikuti printer default</option>
+                {printers.map((printer) => (
+                  <option key={printer.id} value={printer.id}>
+                    {printer.name}{printer.model ? ` · ${printer.model}` : ''} · {printer.status}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <div className="form-actions" style={{ gridColumn: '1 / -1' }}>
               <Button type="button" variant="secondary" onClick={() => setForm(null)} disabled={saving}>Batal</Button>
               <Button type="submit" variant="primary" loading={saving}>Simpan Kanban</Button>
@@ -437,6 +477,7 @@ export function KanbanConfigPage() {
                   <span><small>Model</small><strong>{form.model || 'Pilih model'}</strong></span>
                   <span><small>Lokasi</small><strong>{form.storeLocation || 'Pilih lokasi'}</strong></span>
                   <span><small>Next Process</small><strong>{form.nextProcess || 'Pilih proses'}</strong></span>
+                  <span><small>Printer</small><strong>{printers.find((printer) => printer.id === form.printerId)?.name ?? 'Printer default'}</strong></span>
                 </div>
               </div>
             </div>
@@ -495,6 +536,7 @@ export function KanbanConfigPage() {
               <span><small>Model</small><strong>{previewConfig.model}</strong></span>
               <span><small>Lokasi</small><strong>{previewConfig.storeLocation}</strong></span>
               <span><small>Next Process</small><strong>{previewConfig.nextProcess}</strong></span>
+              <span><small>Printer</small><strong>{previewConfig.printer?.name ?? 'Printer default'}</strong></span>
             </div>
             <div className="kanban-config-preview__qr">
               <QRCodeSVG value={previewPayload} size={160} level="M" />

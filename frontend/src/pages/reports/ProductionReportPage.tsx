@@ -11,6 +11,7 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { ProgressBar } from '../../components/ui/ProgressBar'
 import { StatCard } from '../../components/ui/StatCard'
 import { useAuth } from '../../contexts/AuthContext'
+import { usePreferences } from '../../contexts/PreferencesContext'
 import { dailyProductionTrend, productionReportRows } from '../../data/mock'
 import { getProductionPart, matchesProductionWorkArea } from '../../data/productionLines'
 import { readProductionShiftRecords } from '../../data/productionLog'
@@ -30,23 +31,24 @@ interface ProductionReportRow {
   date?: string
 }
 
-function loadProductionTotals() {
+function loadProductionTotals(t: (id: string, en: string) => string) {
   try {
     return { records: readProductionShiftRecords(), error: '' }
   } catch (error) {
     return {
       records: [],
-      error: error instanceof Error ? error.message : 'Hasil shift gagal dibaca.',
+      error: error instanceof Error ? error.message : t('Hasil shift gagal dibaca.', 'Failed to read shift results.'),
     }
   }
 }
 
 export function ProductionReportPage() {
   const { activeLine, activeWorkArea } = useAuth()
+  const { t, formatDate } = usePreferences()
   const [shift, setShift] = useState('all')
   const [part, setPart] = useState('all')
   const [period, setPeriod] = useState('7d')
-  const [productionTotals] = useState(loadProductionTotals)
+  const [productionTotals] = useState(() => loadProductionTotals(t))
   const lineLabel = activeWorkArea?.label ?? (activeLine === 'all' ? 'All lines' : activeLine)
   const manualRows: ProductionReportRow[] = productionTotals.records.map((record) => {
     const partData = getProductionPart(record.partNumber)
@@ -107,10 +109,10 @@ export function ProductionReportPage() {
   const columns: Column<ProductionReportRow>[] = [
     {
       key: 'date',
-      header: 'Tanggal',
+      header: t('Tanggal', 'Date'),
       render: (row) => (
         <div className="cell-stack">
-          <span className="cell-main">{row.date ?? 'Data demo'}</span>
+          <span className="cell-main">{row.date ? formatDate(row.date) : t('Data demo', 'Demo data')}</span>
         </div>
       ),
     },
@@ -146,7 +148,7 @@ export function ProductionReportPage() {
   ]
 
   const trend = dailyProductionTrend.map((item) => ({
-    label: item.date,
+    label: formatDate(item.date),
     target: activeLine === 'Robot H' ? 0 : item.target,
     assy: activeLine === 'Robot H' ? 0 : item.assy,
     subAssy: activeLine === 'Robot H' ? 0 : item.subAssy,
@@ -162,7 +164,10 @@ export function ProductionReportPage() {
       <PageHeader
         eyebrow="Reports"
         title="Production Report"
-        subtitle="Analisis output Assy dan Sub Assy per tanggal, shift, dan part number. Membandingkan target FSS dengan hasil aktual serta jumlah NG."
+        subtitle={t(
+          'Analisis output Assy dan Sub Assy per tanggal, shift, dan part number. Membandingkan target FSS dengan hasil aktual serta jumlah NG.',
+          'Output analysis for Assy and Sub Assy by date, shift, and part number. Compares FSS targets with actual results and NG counts.',
+        )}
         meta={
           <>
             <span className="page-meta__item">
@@ -181,43 +186,45 @@ export function ProductionReportPage() {
       />
 
       {productionTotals.error && (
-        <Callout tone="danger" title="Hasil produksi tidak tersedia">
+        <Callout tone="danger" title={t('Hasil produksi tidak tersedia', 'Production results unavailable')}>
           {productionTotals.error}
         </Callout>
       )}
-      <Callout tone="info" title="Target dan tren masih data demo">
-        Hasil OK/NG yang disimpan operator muncul per shift. Baris dengan tanggal "Data demo" dan
-        grafik tren berasal dari data contoh; target FSS belum terhubung ke hasil aktual frontend.
+      <Callout tone="info" title={t('Target dan tren masih data demo', 'Targets and trends are still demo data')}>
+        {t(
+          'Hasil OK/NG yang disimpan operator muncul per shift. Baris dengan tanggal "Data demo" dan grafik tren berasal dari data contoh; target FSS belum terhubung ke hasil aktual frontend.',
+          'OK/NG results saved by operators appear per shift. Rows dated "Demo data" and the trend chart come from sample data; FSS targets are not yet connected to actual frontend results.',
+        )}
       </Callout>
 
       <div className="kpi-grid">
-        <StatCard label="Total target" value={formatNumber(totalTarget)} suffix="pcs" icon={Target} tone="orange" note="Periode terpilih" />
-        <StatCard label="Total actual" value={formatNumber(totalActual)} suffix="pcs" icon={TrendingUp} tone="sky" trend={{ label: '+6,4%', direction: 'up' }} note="vs periode lalu" />
-        <StatCard label="Achievement" value={formatPercent(achievement)} icon={FileBarChart2} tone="green" note="Target vs actual" />
+        <StatCard label={t('Total target', 'Total target')} value={formatNumber(totalTarget)} suffix="pcs" icon={Target} tone="orange" note={t('Periode terpilih', 'Selected period')} />
+        <StatCard label={t('Total actual', 'Total actual')} value={formatNumber(totalActual)} suffix="pcs" icon={TrendingUp} tone="sky" trend={{ label: '+6,4%', direction: 'up' }} note={t('vs periode lalu', 'vs previous period')} />
+        <StatCard label="Achievement" value={formatPercent(achievement)} icon={FileBarChart2} tone="green" note={t('Target vs actual', 'Target vs actual')} />
         <StatCard label="Total NG" value={String(totalNg)} suffix="pcs" icon={FileBarChart2} tone="red" note={`NG rate ${((totalNg / (totalActual || 1)) * 100).toFixed(2).replace('.', ',')}%`} />
       </div>
 
       <section className="card">
         <div className="report-filters">
-          <Field label="Periode" htmlFor="prod-period">
+          <Field label={t('Periode', 'Period')} htmlFor="prod-period">
             <select id="prod-period" className="select" value={period} onChange={(event) => setPeriod(event.target.value)}>
-              <option value="7d">7 hari terakhir</option>
-              <option value="12d">12 hari terakhir</option>
-              <option value="30d">30 hari terakhir</option>
+              <option value="7d">{t('7 hari terakhir', 'Last 7 days')}</option>
+              <option value="12d">{t('12 hari terakhir', 'Last 12 days')}</option>
+              <option value="30d">{t('30 hari terakhir', 'Last 30 days')}</option>
             </select>
           </Field>
           <Field label="Shift" htmlFor="prod-shift">
             <select id="prod-shift" className="select" value={shift} onChange={(event) => setShift(event.target.value)}>
               {shifts.map((item) => (
                 <option key={item} value={item}>
-                  {item === 'all' ? 'Semua shift' : item}
+                  {item === 'all' ? t('Semua shift', 'All shifts') : item}
                 </option>
               ))}
             </select>
           </Field>
           <Field label="Part number" htmlFor="prod-part">
             <select id="prod-part" className="select" value={part} onChange={(event) => setPart(event.target.value)}>
-              <option value="all">Semua part number</option>
+              <option value="all">{t('Semua part number', 'All part numbers')}</option>
               {[...new Set(lineRows.map((row) => row.partNumber))].map((partNumber) => (
                 <option key={partNumber} value={partNumber}>
                   {partNumber}
@@ -226,7 +233,7 @@ export function ProductionReportPage() {
             </select>
           </Field>
           <div className="field">
-            <span className="field-label">Line aktif</span>
+            <span className="field-label">{t('Line aktif', 'Active line')}</span>
             <Badge tone="sky">{lineLabel}</Badge>
           </div>
         </div>
@@ -236,15 +243,15 @@ export function ProductionReportPage() {
         <section className="card chart-card">
           <div className="chart-card__head">
             <div>
-              <h2 className="section-title">Tren target vs actual</h2>
-              <p className="section-sub">Output harian seluruh part number (pcs)</p>
+              <h2 className="section-title">{t('Tren target vs actual', 'Target vs actual trend')}</h2>
+              <p className="section-sub">{t('Output harian seluruh part number (pcs)', 'Daily output for all part numbers (pcs)')}</p>
             </div>
             <Badge tone="sky">Daily</Badge>
           </div>
           <AreaChart
             labels={labels}
             height={270}
-            ariaLabel="Grafik target dan actual produksi harian"
+            ariaLabel={t('Grafik target dan actual produksi harian', 'Daily production target and actual chart')}
             series={[
               { name: 'Target', color: '#38bdf8', values: target, dashed: true },
               { name: 'Assy', color: '#f97316', values: assy, area: true },
@@ -256,14 +263,14 @@ export function ProductionReportPage() {
         <section className="card chart-card">
           <div className="chart-card__head">
             <div>
-              <h2 className="section-title">Output per shift</h2>
-              <p className="section-sub">Perbandingan 2 shift (pcs)</p>
+              <h2 className="section-title">{t('Output per shift', 'Output per shift')}</h2>
+              <p className="section-sub">{t('Perbandingan 2 shift (pcs)', 'Comparison of 2 shifts (pcs)')}</p>
             </div>
           </div>
           <BarChart
             labels={['Shift 1', 'Shift 2']}
             height={270}
-            ariaLabel="Grafik output per shift"
+            ariaLabel={t('Grafik output per shift', 'Output per shift chart')}
             series={[
               { name: 'Target', color: '#38bdf8', values: [1, 2].map((shiftNumber) =>
                 lineRows.filter((row) => row.shift === String(shiftNumber)).reduce((sum, row) => sum + row.target, 0),
@@ -274,8 +281,8 @@ export function ProductionReportPage() {
             ]}
           />
           <div className="chart-card__foot">
-            <span className="muted small">{lineLabel} · dari data produksi terpilih</span>
-            <Badge tone="success">{rows.length} item</Badge>
+            <span className="muted small">{lineLabel} · {t('dari data produksi terpilih', 'from selected production data')}</span>
+            <Badge tone="success">{rows.length} {t('item', 'items')}</Badge>
           </div>
         </section>
       </div>
@@ -283,17 +290,17 @@ export function ProductionReportPage() {
       <section className="card">
         <div className="section-head">
           <div>
-            <h2 className="section-title">Detail produksi</h2>
-            <p className="section-sub">{rows.length} baris data</p>
+            <h2 className="section-title">{t('Detail produksi', 'Production details')}</h2>
+            <p className="section-sub">{rows.length} {t('baris data', 'data rows')}</p>
           </div>
-          <Badge tone="neutral">{period === '7d' ? '7 hari' : period === '12d' ? '12 hari' : '30 hari'}</Badge>
+          <Badge tone="neutral">{period === '7d' ? t('7 hari', '7 days') : period === '12d' ? t('12 hari', '12 days') : t('30 hari', '30 days')}</Badge>
         </div>
         <DataTable
           columns={columns}
           rows={rows}
           rowKey={(row) => `${row.partNumber}-${row.shift}`}
           minWidth={820}
-          footer={<span className="muted small">Achievement dihitung dari total actual ÷ total target</span>}
+          footer={<span className="muted small">{t('Achievement dihitung dari total actual ÷ total target', 'Achievement is calculated from total actual ÷ total target')}</span>}
         />
       </section>
     </div>
