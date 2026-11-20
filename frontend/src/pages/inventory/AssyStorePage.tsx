@@ -1,5 +1,5 @@
 import { ArrowDownLeft, ArrowUpRight, CalendarDays, MapPin, Store } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AreaChart } from '../../components/charts/AreaChart'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -9,28 +9,48 @@ import { ProgressBar } from '../../components/ui/ProgressBar'
 import { StatCard } from '../../components/ui/StatCard'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePreferences } from '../../contexts/PreferencesContext'
-import { stockItems, inventoryTrend } from '../../data/mock'
-import { getProductionPart } from '../../data/productionLines'
+import { describeApiError } from '../../lib/api'
+import { listLedger, listStock, type LedgerEntryRecord, type StockItemRecord } from '../../lib/inventoryApi'
+import { listParts } from '../../lib/masterApi'
 import { formatNumber } from '../../lib/utils'
-
-const movements = [
-  { id: 'mv-1', time: '09:12', type: 'Store In', qty: 39, ref: 'KN-2611-041', user: 'Adi Nugroho', tone: 'plus' },
-  { id: 'mv-2', time: '08:55', type: 'Collect Pickup', qty: -50, ref: 'DL-88210', user: 'Collect Team', tone: 'minus' },
-  { id: 'mv-3', time: '07:40', type: 'Collect Pickup', qty: -50, ref: 'DL-88209', user: 'Collect Team', tone: 'minus' },
-  { id: 'mv-4', time: '07:15', type: 'Store In', qty: 40, ref: 'KN-2611-038', user: 'Adi Nugroho', tone: 'plus' },
-]
 
 export function AssyStorePage() {
   const { activeLine } = useAuth()
-  const { t, formatDate } = usePreferences()
-  const assyItems = stockItems.filter((item) => {
-    if (item.category !== 'Assy') return false
-    const line =
-      getProductionPart(item.partNumber)?.line ??
-      (item.location.startsWith('R-H') ? 'Robot H' : 'Robot G')
+  const { formatDate } = usePreferences()
+  const [items, setItems] = useState<StockItemRecord[]>([])
+  const [ledger, setLedger] = useState<LedgerEntryRecord[]>([])
+  const [lineByPart, setLineByPart] = useState<Record<string, string>>({})
+  const [selectedPart, setSelectedPart] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [nextItems, parts, nextLedger] = await Promise.all([
+        listStock({ category: 'Assy' }),
+        listParts(),
+        listLedger(),
+      ])
+      setItems(nextItems)
+      setLedger(nextLedger)
+      setLineByPart(Object.fromEntries(parts.map((part) => [part.partNumber, part.line])))
+    } catch (loadError) {
+      setError(describeApiError(loadError, 'Data Assy Store gagal dimuat.'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
+  const assyItems = items.filter((item) => {
+    const line = lineByPart[item.partNumber] ?? item.location
     return activeLine === 'all' || line === activeLine
   })
-  const [selectedPart, setSelectedPart] = useState('')
   const selected = assyItems.find((item) => item.partNumber === selectedPart) ?? assyItems[0]
 
   if (!selected) {
@@ -41,7 +61,13 @@ export function AssyStorePage() {
           title="Assy Store"
           subtitle={`Belum ada stok Assy yang terdaftar untuk ${activeLine === 'all' ? 'semua line' : activeLine}.`}
           meta={<span className="page-meta__item"><MapPin size={12} /> {activeLine}</span>}
+          actions={
+            <Button variant="secondary" loading={loading} onClick={() => void loadData()}>
+              Muat ulang
+            </Button>
+          }
         />
+        {error && <Callout tone="danger" title="Gagal memuat">{error}</Callout>}
         <Callout tone="info" title="Data stok belum tersedia">
           Saldo Assy akan tampil setelah part dan stok untuk line ini dimasukkan.
         </Callout>
@@ -50,7 +76,16 @@ export function AssyStorePage() {
   }
 
   const currentQty = selected.store + selected.buffer
-  const capacity = (currentQty / selected.maxStore) * 100
+  const capacity = selected.maxStore > 0 ? (currentQty / selected.maxStore) * 100 : 0
+  const selectedLedger = ledger.filter((entry) => entry.partNumber === selected.partNumber)
+  const movements = selectedLedger.slice(0, 4)
+  const trendEntries = selectedLedger.slice(0, 12).reverse()
+  const labels = trendEntries.length > 0
+    ? trendEntries.map((entry) => new Date(entry.time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }))
+    : ['Sekarang']
+  const storeValues = trendEntries.length > 0
+    ? trendEntries.map((entry) => entry.balance)
+    : [selected.store]
 
   return (
     <div className="page">
@@ -64,7 +99,7 @@ export function AssyStorePage() {
               <MapPin size={12} /> {activeLine === 'all' ? 'Semua line' : activeLine} / AS
             </span>
             <span className="page-meta__item">
-              <CalendarDays size={12} /> 12 November 2026
+              <CalendarDays size={12} /> {formatDate(new Date())}
             </span>
           </>
         }
@@ -84,12 +119,14 @@ export function AssyStorePage() {
                 ))}
               </select>
             </div>
-            <Button variant="secondary" leftIcon={<Store size={15} />}>
-              Store In
+            <Button variant="secondary" leftIcon={<Store size={15} />} loading={loading} onClick={() => void loadData()}>
+              Muat ulang
             </Button>
           </>
         }
       />
+
+      {error && <Callout tone="danger" title="Gagal memuat">{error}</Callout>}
 
       <section className="card store-hero">
         <div>
@@ -155,19 +192,16 @@ export function AssyStorePage() {
         <section className="card chart-card">
           <div className="chart-card__head">
             <div>
-              <h2 className="section-title">Tren stok Assy</h2>
-              <p className="section-sub">Store vs Buffer · 12 hari terakhir</p>
+              <h2 className="section-title">Tren saldo Assy</h2>
+              <p className="section-sub">Dari {movements.length > 0 ? Math.min(selectedLedger.length, 12) : 0} mutasi terakhir</p>
             </div>
             <Badge tone="sky">Assy Store</Badge>
           </div>
           <AreaChart
-            labels={inventoryTrend.map((item) => item.period)}
+            labels={labels}
             height={250}
-            ariaLabel="Tren stok Assy Store dan Buffer"
-            series={[
-              { name: 'Store', color: '#38bdf8', values: activeLine === 'Robot H' ? inventoryTrend.map(() => 0) : inventoryTrend.map((item) => item.store) },
-              { name: 'Buffer', color: '#f97316', values: activeLine === 'Robot H' ? inventoryTrend.map(() => 0) : inventoryTrend.map((item) => item.buffer) },
-            ]}
+            ariaLabel="Tren saldo Assy Store"
+            series={[{ name: 'Store', color: '#38bdf8', values: storeValues }]}
           />
         </section>
 
@@ -177,31 +211,26 @@ export function AssyStorePage() {
               <h2 className="section-title">Recent movement</h2>
               <p className="section-sub">{selected.partNumber}</p>
             </div>
-            <Badge tone="neutral">Hari ini</Badge>
+            <Badge tone="neutral">{movements.length} transaksi</Badge>
           </div>
 
           <div className="movement-list">
+            {movements.length === 0 && (
+              <Callout tone="info">Belum ada mutasi stok untuk part ini.</Callout>
+            )}
             {movements.map((movement) => (
               <div className="movement" key={movement.id}>
-                <div
-                  className={`movement__icon ${
-                    movement.tone === 'plus' ? 'stat-icon--green' : 'stat-icon--red'
-                  }`}
-                >
-                  {movement.tone === 'plus' ? (
-                    <ArrowDownLeft size={14} />
-                  ) : (
-                    <ArrowUpRight size={14} />
-                  )}
+                <div className={`movement__icon ${movement.qty >= 0 ? 'stat-icon--green' : 'stat-icon--red'}`}>
+                  {movement.qty >= 0 ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
                 </div>
                 <div className="movement__copy">
                   <strong>{movement.type}</strong>
                   <span>
-                    {movement.ref} · {movement.user}
+                    {movement.reference} · {movement.user}
                   </span>
                 </div>
-                <div className={`movement__qty ${movement.tone === 'plus' ? 'is-plus' : 'is-minus'}`}>
-                  {movement.tone === 'plus' ? '+' : ''}
+                <div className={`movement__qty ${movement.qty >= 0 ? 'is-plus' : 'is-minus'}`}>
+                  {movement.qty > 0 ? '+' : ''}
                   {formatNumber(movement.qty)} pcs
                 </div>
               </div>

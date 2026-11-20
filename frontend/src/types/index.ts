@@ -307,7 +307,7 @@ export interface Device {
   assignedTo: string
   status: 'online' | 'offline' | 'maintenance'
   lastSeen: string
-  connectionType?: 'wireless' | 'wired'
+  connectionType?: 'wireless' | 'bluetooth' | 'wired'
 }
 
 export interface ModelMaster {

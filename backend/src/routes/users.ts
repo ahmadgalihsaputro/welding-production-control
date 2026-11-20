@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
@@ -184,7 +185,7 @@ async function syncPartSkills(
   }
 }
 
-router.get('/roles', async (_req, res) => {
+router.get('/roles', requireRole('admin', 'leader', 'management'), async (_req, res) => {
   res.json(
     (Object.keys(roleLabels) as Role[]).map((role) => ({
       role,
@@ -342,7 +343,8 @@ const deviceSchema = z.object({
   location: z.string().min(1),
   assignedTo: z.string().nullable().optional(),
   status: z.enum(['online', 'offline', 'maintenance']).optional(),
-  connectionType: z.enum(['wireless', 'wired']).nullable().optional(),
+  connectionType: z.enum(['wireless', 'bluetooth', 'wired']).nullable().optional(),
+  pairingCode: z.string().nullable().optional(),
   isDefault: z.boolean().optional(),
 })
 
@@ -357,8 +359,10 @@ async function saveDevice(id: string | null, body: z.infer<typeof deviceSchema>)
         data: { isDefault: false },
       })
     }
+    const pairingCode = body.pairingCode ?? (id ? undefined : type === 'Scanner' ? `SCN-${randomUUID().slice(0, 8).toUpperCase()}` : null)
     const data = {
       ...body,
+      ...(pairingCode !== undefined ? { pairingCode } : {}),
       ...(body.status ? { lastSeen: body.status === 'online' ? new Date() : undefined } : {}),
     }
     return id
@@ -418,7 +422,7 @@ const updateUserSchema = z.object({
   shiftAnchorDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 })
 
-router.get('/:id', async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id', requireRole('admin', 'leader', 'management'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: String(req.params.id) },

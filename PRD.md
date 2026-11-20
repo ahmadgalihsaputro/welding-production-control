@@ -61,8 +61,7 @@ dianggap aktif hanya karena menu atau halaman integrasinya tersedia.
 - Dashboard produksi.
 - Production Control: scan/request, alokasi, antrean Assy/Sub Assy, hasil, NG, jadwal, completed
   box, dan audit.
-- Material Control: request, pickup, return, receiving, external material.
-- Inventory Control: stock overview, buffer, store, ledger, adjustment.
+- Inventory Control: antrian supplier hasil scan, stock overview, buffer, store, ledger.
 - Master Data: model, part, BOM, cycle time/capacity, mesin/line, stock policy, lokasi, shift,
   dan konfigurasi kanban.
 - Reports dan pengaturan aplikasi.
@@ -341,16 +340,14 @@ Rute frontend yang terdokumentasi:
 
 | Modul | Route |
 |---|---|
-| Auth | `/login`, `/forgot-password` |
-| Supply scan | `/supply/scan` |
+| Auth | `/login` |
 | Dashboard | `/` |
 | Production | `/production/schedule`, `/production/assy-queue`, `/production/assy`, `/production/queue`, `/production/allocation`, `/production/sub-assy`, `/production/results` |
-| Material | `/material/request`, `/material/pickup`, `/material/return`, `/material/assy-pickup`, `/material/external`, `/material/receiving` |
-| Inventory | `/inventory/overview`, `/inventory/buffer`, `/inventory/assy-store`, `/inventory/sub-assy-store`, `/inventory/ledger`, `/inventory/adjustment` |
-| Master Data | `/master/structure`, `/master/models`, `/master/parts`, `/master/bom`, `/master/cycle-time`, `/master/routing`, `/master/machines`, `/master/stock-policy`, `/master/locations`, `/master/shifts`, `/master/kanban` |
+| Inventory | `/material/supplier-queue`, `/inventory/overview`, `/inventory/buffer`, `/inventory/assy-store`, `/inventory/sub-assy-store`, `/inventory/ledger` |
+| Master Data | `/master/models`, `/master/parts`, `/master/bom`, `/master/cycle-time`, `/master/machines`, `/master/stock-policy`, `/master/locations`, `/master/shifts`, `/master/kanban`, `/master/work-areas` |
 | Reports | `/reports/production`, `/reports/inventory`, `/reports/material-usage`, `/reports/ng`, `/reports/transactions` |
 | Users | `/users/list`, `/users/roles`, `/users/devices` |
-| Settings | `/settings/profile`, `/settings/preferences`, `/settings/notifications`, `/settings/integration`, `/settings/printing`, `/settings/security`, `/settings/backup` |
+| Settings | `/settings/profile`, `/settings/preferences`, `/settings/notifications`, `/settings/printing`, `/settings/backup` |
 
 Route aktual mengikuti `frontend/src/App.tsx`; daftar ini adalah peta produk, bukan jaminan semua
 halaman terintegrasi atau tersedia untuk semua role.

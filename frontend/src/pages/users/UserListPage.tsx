@@ -13,6 +13,7 @@ import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
+import { FormDialog } from '../../components/ui/FormDialog'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
@@ -535,27 +536,29 @@ export function UserListPage() {
         />
       </div>
 
-      {showForm && (
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">
-                {form.id ? 'Ubah user' : 'Akun baru'}
-              </h2>
-              <p className="section-sub">
-                {form.id
-                  ? 'Perbarui data akun. Employee ID dan username tidak dapat diubah.'
-                  : 'Akun yang dibuat di sini langsung tersimpan di database dan dapat dipakai login.'}
-              </p>
-            </div>
-            <Badge tone="success">Terhubung database</Badge>
-          </div>
-
-          <div className="form-grid">
+      <FormDialog
+        open={showForm}
+        onClose={closeForm}
+        titleId="user-form-title"
+        title={form.id ? 'Ubah user' : 'Akun baru'}
+        subtitle={
+          form.id
+            ? 'Perbarui data akun. Employee ID dan username tidak dapat diubah.'
+            : 'Akun yang dibuat di sini langsung tersimpan di database dan dapat dipakai login.'
+        }
+        badge={<Badge tone="success">Terhubung database</Badge>}
+      >
+        {error && (
+          <Callout tone="danger" title="Aksi gagal">
+            {error}
+          </Callout>
+        )}
+        <div className="form-grid">
             <Field label="Nama lengkap" htmlFor="user-name">
               <input
                 id="user-name"
                 className="input"
+                autoFocus
                 value={form.name}
                 onChange={(event) => updateForm('name', event.target.value)}
                 placeholder="Nama karyawan"
@@ -767,8 +770,7 @@ export function UserListPage() {
               {form.id ? 'Simpan perubahan' : 'Simpan user'}
             </Button>
           </div>
-        </section>
-      )}
+      </FormDialog>
 
       <section className="card">
         <div className="section-head">

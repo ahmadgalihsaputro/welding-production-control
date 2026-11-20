@@ -16,7 +16,7 @@ Node.js + Express + Prisma + PostgreSQL API untuk aplikasi WPC (Welding Producti
    PORT=4000
    DATABASE_URL=postgresql://postgres:postgres@localhost:5432/wpc?schema=public
    JWT_SECRET=change-me-in-production
-   JWT_EXPIRES_IN=12h
+   JWT_EXPIRES_IN=15m
    CORS_ORIGIN=http://localhost:5173
    ```
 
@@ -92,11 +92,16 @@ curl -X POST http://localhost:4000/api/auth/login \
   -d '{"identifier":"AD001","password":"wpc123"}'
 ```
 
-Semua endpoint selain `/health` dan `/api/auth/login` memerlukan header:
+Endpoint publik: `/health`, `/api/auth/login`, `POST /api/scan`, dan `GET /api/scan/pending`.
+Endpoint lain memerlukan header:
 
 ```
 Authorization: Bearer <token>
 ```
+
+Scanner HID memakai kode pairing sebagai kredensial. Prefix tiap hasil scan wajib
+`SCN-XXXXXXXX|<barcode>`, dan device harus `online` di Device Management. Kode pairing
+harus dibuat unik per scanner; scanner tidak memakai akun login.
 
 ## API
 
@@ -156,6 +161,17 @@ Tipe produksi menerima `Assy`, `Sub_Assy`, maupun `Sub Assy` (dinormalisasi ke `
 `kind`: `request`, `pickup`, `return`, `receiving`, `external`.
 Status `completed`/`received` pada `request`/`pickup` mengurangi store, sedangkan
 `return`/`receiving`/`external` menambah store dan menulis ledger.
+
+### Scan (publik, kecuali daftar device)
+
+| Method | Path                 | Keterangan                                                       |
+| ------ | -------------------- | ---------------------------------------------------------------- |
+| POST   | `/api/scan`          | Scan kanban supplier/produksi; butuh kode pairing scanner         |
+| GET    | `/api/scan/pending`  | Jumlah antrian assy, sub assy, dan supplier                       |
+| GET    | `/api/scan/devices`  | Daftar scanner online untuk input manual (wajib login)           |
+
+`POST /api/scan` menerima `{ "code": "SCN-XXXXXXXX|<barcode>" }` atau
+`{ "code": "<barcode>", "pairingCode": "SCN-XXXXXXXX" }` untuk input manual.
 
 ### Inventory
 
@@ -250,6 +266,7 @@ npm run dev            # tsx watch
 npm run build          # compile ke dist/
 npm start              # jalankan hasil build
 npm run typecheck      # tsc --noEmit
+npm test               # tes murni (node:test)
 npm run prisma:generate
 npm run prisma:migrate
 npm run prisma:seed

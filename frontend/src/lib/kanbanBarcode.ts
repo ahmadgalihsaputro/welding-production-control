@@ -27,6 +27,15 @@ function isKanbanBarcodePayload(value: unknown): value is KanbanBarcodePayload {
   return true
 }
 
+// Prefix pairing scanner: SCN-XXXXXXXX|<barcode>. Dibuang sebelum validasi payload.
+export function splitScanPrefix(value: string): { deviceCode: string | null; code: string } {
+  const trimmed = value.trim()
+  const match = trimmed.match(/^(SCN-[A-Z0-9-]+)\|/)
+  return match
+    ? { deviceCode: match[1], code: trimmed.slice(match[0].length).trim() }
+    : { deviceCode: null, code: trimmed }
+}
+
 export function parseKanbanBarcode(value: string): KanbanBarcodePayload | null {
   try {
     const decoded: unknown = JSON.parse(value)

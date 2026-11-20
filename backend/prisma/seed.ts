@@ -273,7 +273,7 @@ const kanbanConfigs = [
 const devices = [
   { name: 'Tablet Assy Line 01', type: 'Tablet', location: 'Robot G - Area Assy', assignedTo: 'Andri Setiawan', status: 'online' },
   { name: 'Tablet Sub Assy 02', type: 'Tablet', location: 'Robot G - Sub Assy', assignedTo: 'Rizky Anu', status: 'online' },
-  { name: 'Scanner Supply Kiosk 01', type: 'Scanner', model: 'Zebra DS2208', location: 'Material Supply', assignedTo: 'Kiosk tanpa akun', status: 'online', connectionType: 'wireless' },
+  { name: 'Scanner Supplier 01', type: 'Scanner', model: 'Zebra DS2208', location: 'Material Supply', assignedTo: 'Area Supplier', status: 'online', connectionType: 'wireless', pairingCode: 'SCN-DEMO001' },
   { name: 'Printer Kanban Buffer', type: 'Printer', model: 'Zebra ZT230', location: 'Production Buffer', assignedTo: 'Leader Produksi', status: 'offline', connectionType: 'wired', isDefault: true },
 ]
 
@@ -459,6 +459,31 @@ async function syncWorkbookMasterData(
   const models = Array.from(new Set(blocks.map((block) => block.model)))
 
   await prisma.$transaction(async (tx) => {
+    // StockItem dulu: ProductionPart.partNumber sekarang FK ke StockItem.
+    for (const part of stock.values()) {
+      await tx.stockItem.upsert({
+        where: { partNumber: part.partNumber },
+        update: {
+          description: part.description,
+          category: part.category,
+          packaging: part.packaging,
+          maxStore: part.maxStore,
+        },
+        create: {
+          partNumber: part.partNumber,
+          description: part.description,
+          category: part.category,
+          packaging: part.packaging,
+          maxStore: part.maxStore,
+          safetyStock: part.safetyStock,
+          store: part.store,
+          buffer: 0,
+          location: part.location,
+          status: stockStatus(part.store, part.safetyStock, part.maxStore),
+        },
+      })
+    }
+
     for (const part of parts.values()) {
       await tx.productionPart.upsert({
         where: { partNumber: part.partNumber },
@@ -480,30 +505,6 @@ async function syncWorkbookMasterData(
           packaging: part.packaging,
           maxStore: part.maxStore,
           cycleTime: part.cycleTime,
-        },
-      })
-    }
-
-    for (const part of stock.values()) {
-      await tx.stockItem.upsert({
-        where: { partNumber: part.partNumber },
-        update: {
-          description: part.description,
-          category: part.category,
-          packaging: part.packaging,
-          maxStore: part.maxStore,
-        },
-        create: {
-          partNumber: part.partNumber,
-          description: part.description,
-          category: part.category,
-          packaging: part.packaging,
-          maxStore: part.maxStore,
-          safetyStock: part.safetyStock,
-          store: part.store,
-          buffer: 0,
-          location: part.location,
-          status: stockStatus(part.store, part.safetyStock, part.maxStore),
         },
       })
     }

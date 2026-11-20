@@ -179,11 +179,13 @@ export function ProductionReportPage() {
           </>
         }
         actions={
-          <Button variant="secondary" leftIcon={<Download size={15} />}>
+          <Button variant="secondary" leftIcon={<Download size={15} />} disabled title={t('Data contoh belum bisa diekspor', 'Demo data cannot be exported')}>
             Export Excel
           </Button>
         }
       />
+
+      <Callout tone="warning">{t('Target dan tren memakai data contoh; ekspor dinonaktifkan sampai tersedia laporan dari backend.', 'Targets and trends use demo data; export is disabled until a backend report is available.')}</Callout>
 
       {productionTotals.error && (
         <Callout tone="danger" title={t('Hasil produksi tidak tersedia', 'Production results unavailable')}>

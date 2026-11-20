@@ -146,11 +146,13 @@ export function NgReportPage() {
           </>
         }
         actions={
-          <Button variant="secondary" leftIcon={<Download size={15} />}>
+          <Button variant="secondary" leftIcon={<Download size={15} />} disabled title={t('Data contoh belum bisa diekspor', 'Demo data cannot be exported')}>
             Export NG
           </Button>
         }
       />
+
+      <Callout tone="warning">{t('Sebagian angka di halaman ini adalah data contoh dan belum bisa diekspor.', 'Some figures on this page are demo data and cannot be exported.')}</Callout>
 
       {productionTotals.error && (
         <Callout tone="danger" title={t('Hasil produksi tidak tersedia', 'Production results unavailable')}>

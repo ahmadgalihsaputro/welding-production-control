@@ -1,20 +1,19 @@
 import { Router } from 'express'
 import { prisma } from '../lib/prisma.js'
 import { authenticate } from '../middleware/auth.js'
+import { jakartaDateKey } from '../lib/userShift.js'
 
 const router = Router()
 
 router.use(authenticate)
 
-function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10)
-}
+const dateKey = (date = new Date()) => jakartaDateKey(date)
 
 router.get('/', async (req, res, next) => {
   try {
     const line = typeof req.query.line === 'string' && req.query.line !== 'all' ? req.query.line : undefined
     const today = new Date()
-    const startOfDay = new Date(`${dateKey(today)}T00:00:00.000Z`)
+    const startOfDay = new Date(`${dateKey(today)}T00:00:00+07:00`)
     const sevenDaysAgo = new Date(startOfDay)
     sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6)
 

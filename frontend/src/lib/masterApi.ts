@@ -72,7 +72,8 @@ export interface DeviceRecord {
   assignedTo: string | null
   status: 'online' | 'offline' | 'maintenance'
   lastSeen: string | null
-  connectionType: 'wireless' | 'wired' | null
+  connectionType: 'wireless' | 'bluetooth' | 'wired' | null
+  pairingCode: string | null
   isDefault: boolean
   kanbanConfigCount: number
   createdAt: string
@@ -86,7 +87,8 @@ export interface DeviceInput {
   location: string
   assignedTo?: string | null
   status?: 'online' | 'offline' | 'maintenance'
-  connectionType?: 'wireless' | 'wired' | null
+  connectionType?: 'wireless' | 'bluetooth' | 'wired' | null
+  pairingCode?: string | null
   isDefault?: boolean
 }
 
@@ -519,7 +521,7 @@ export interface KanbanPrinter {
   name: string
   model: string | null
   status: 'online' | 'offline' | 'maintenance'
-  connectionType: 'wireless' | 'wired' | null
+  connectionType: 'wireless' | 'bluetooth' | 'wired' | null
 }
 
 export interface KanbanPartConfigRecord {

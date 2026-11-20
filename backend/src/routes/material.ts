@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { authenticate, type AuthenticatedRequest, requireRole } from '../middleware/auth.js'
 import { applyStockMovement } from '../lib/stock.js'
+import { jakartaDateKey } from '../lib/userShift.js'
 
 const router = Router()
 
@@ -38,10 +39,6 @@ const movementDirection: Record<MaterialKind, 1 | -1> = {
   external: 1,
 }
 
-function dateKey(date = new Date()) {
-  return date.toISOString().slice(0, 10)
-}
-
 router.get('/requests', async (req, res, next) => {
   try {
     const kind = typeof req.query.kind === 'string' ? req.query.kind : undefined
@@ -72,7 +69,7 @@ const createRequestSchema = z.object({
   note: z.string().optional(),
 })
 
-router.post('/requests', async (req: AuthenticatedRequest, res, next) => {
+router.post('/requests', requireRole('admin', 'leader'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = createRequestSchema.parse(req.body)
     const partNumber = body.partNumber.trim().toUpperCase()
@@ -81,7 +78,7 @@ router.post('/requests', async (req: AuthenticatedRequest, res, next) => {
 
     const code =
       body.code?.trim().toUpperCase() ??
-      `${codePrefix[body.kind]}-${dateKey().replaceAll('-', '')}-${Date.now().toString().slice(-6)}`
+      `${codePrefix[body.kind]}-${jakartaDateKey(new Date()).replaceAll('-', '')}-${Date.now().toString().slice(-6)}`
 
     const item = await prisma.materialRequest.create({
       data: {
@@ -116,7 +113,7 @@ const statusSchema = z.object({
 
 const closedStatuses = new Set(['received', 'completed'])
 
-router.patch('/requests/:id/status', async (req: AuthenticatedRequest, res, next) => {
+router.patch('/requests/:id/status', requireRole('leader', 'admin'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = statusSchema.parse(req.body)
     const request = await prisma.materialRequest.findUnique({
@@ -135,25 +132,40 @@ router.patch('/requests/:id/status', async (req: AuthenticatedRequest, res, next
       closedStatuses.has(body.status) && !closedStatuses.has(request.status)
 
     const updated = await prisma.$transaction(async (tx) => {
-      if (shouldMoveStock) {
-        const qty = request.boxes * request.pcsPerBox
-        await applyStockMovement(tx, {
-          partNumber: request.partNumber,
-          delta: movementDirection[kind] * qty,
-          type: movementType[kind],
-          reference: request.code,
-          user: req.user!.name,
+      if (!shouldMoveStock) {
+        return tx.materialRequest.update({
+          where: { id: request.id },
+          data: {
+            status: body.status,
+            ...(body.note !== undefined ? { note: body.note } : {}),
+          },
         })
       }
-      return tx.materialRequest.update({
-        where: { id: request.id },
+
+      // Klaim status dulu supaya dua tab tidak bisa menambah stok yang sama dua kali.
+      const claimed = await tx.materialRequest.updateMany({
+        where: { id: request.id, status: request.status },
         data: {
           status: body.status,
           ...(body.note !== undefined ? { note: body.note } : {}),
         },
       })
+      if (claimed.count === 0) return null
+
+      const qty = request.boxes * request.pcsPerBox
+      await applyStockMovement(tx, {
+        partNumber: request.partNumber,
+        delta: movementDirection[kind] * qty,
+        type: movementType[kind],
+        reference: request.code,
+        user: req.user!.name,
+      })
+      return tx.materialRequest.findUniqueOrThrow({ where: { id: request.id } })
     })
 
+    if (!updated) {
+      return res.status(409).json({ message: 'Kanban ini sudah diproses. Muat ulang antrian sebelum mencoba lagi.' })
+    }
     res.json(updated)
   } catch (error) {
     next(error)

@@ -1,9 +1,11 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { findGroupByPath, visibleNavigation } from '../../data/navigation'
+import { usePreferences } from '../../contexts/PreferencesContext'
+import { findGroupByPath, navigationEn, visibleNavigation } from '../../data/navigation'
 
 export function ModuleTabs() {
   const { user } = useAuth()
+  const { t } = usePreferences()
   const location = useLocation()
 
   if (!user) return null
@@ -23,7 +25,7 @@ export function ModuleTabs() {
           end={item.path === '/'}
           className={({ isActive }) => `module-tab${isActive ? ' is-active' : ''}`}
         >
-          {item.label}
+          {t(item.label, navigationEn[item.label] ?? item.label)}
           {item.badge && <span className="module-tab__badge">{item.badge}</span>}
         </NavLink>
       ))}

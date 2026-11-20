@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
+import { FormDialog } from '../../components/ui/FormDialog'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { describeApiError } from '../../lib/api'
@@ -333,18 +334,20 @@ export function KanbanConfigPage() {
       {loading && configs.length === 0 && <Callout tone="info">Memuat konfigurasi Kanban…</Callout>}
 
       {form && (
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">{form.id ? 'Ubah Kanban' : 'Tambah Kanban'}</h2>
-              <p className="section-sub">PN, model, line, dan jenis mengikuti Master Part.</p>
-            </div>
-            <Badge tone="success">Data tersinkron</Badge>
-          </div>
+        <FormDialog
+          open={Boolean(form)}
+          onClose={() => setForm(null)}
+          titleId="kanban-form-title"
+          title={form.id ? 'Ubah Kanban' : 'Tambah Kanban'}
+          subtitle="PN, model, line, dan jenis mengikuti Master Part."
+          badge={<Badge tone="success">Data tersinkron</Badge>}
+        >
+          {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
           <form className="form-grid" onSubmit={(event) => void saveConfig(event)}>
             <Field label="Part Number" htmlFor="kanban-part-number">
               <select
                 id="kanban-part-number"
+                autoFocus
                 className="select"
                 value={form.partNumber}
                 onChange={(event) => selectPart(event.target.value)}
@@ -482,7 +485,7 @@ export function KanbanConfigPage() {
               </div>
             </div>
           )}
-        </section>
+        </FormDialog>
       )}
 
       <section className="card">

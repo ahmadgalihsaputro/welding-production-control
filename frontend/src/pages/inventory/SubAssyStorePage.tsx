@@ -1,5 +1,5 @@
 import { AlertTriangle, Boxes, PackageSearch, Store, Warehouse } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -12,9 +12,9 @@ import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuth } from '../../contexts/AuthContext'
 import { useQueue } from '../../contexts/QueueContext'
-import { stockItems } from '../../data/mock'
-import { getProductionPart } from '../../data/productionLines'
-import type { StockItem } from '../../types'
+import { describeApiError } from '../../lib/api'
+import { listStock, type StockItemRecord } from '../../lib/inventoryApi'
+import { listParts } from '../../lib/masterApi'
 import { formatNumber } from '../../lib/utils'
 
 export function SubAssyStorePage() {
@@ -22,16 +22,39 @@ export function SubAssyStorePage() {
   const { activeLine } = useAuth()
   const { items } = useQueue()
   const [search, setSearch] = useState('')
+  const [stocks, setStocks] = useState<StockItemRecord[]>([])
+  const [lineByPart, setLineByPart] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [nextStocks, parts] = await Promise.all([
+        listStock({ category: 'Sub Assy' }),
+        listParts(),
+      ])
+      setStocks(nextStocks)
+      setLineByPart(Object.fromEntries(parts.map((part) => [part.partNumber, part.line])))
+    } catch (loadError) {
+      setError(describeApiError(loadError, 'Data Sub Assy Store gagal dimuat.'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
   const subAssyItems = useMemo(
     () =>
-      stockItems.filter((item) => {
-        if (item.category !== 'Sub Assy') return false
-        const line =
-          getProductionPart(item.partNumber)?.line ??
-          (item.location.startsWith('R-H') ? 'Robot H' : 'Robot G')
+      stocks.filter((item) => {
+        const line = lineByPart[item.partNumber] ?? item.location
         return activeLine === 'all' || line === activeLine
       }),
-    [activeLine],
+    [activeLine, lineByPart, stocks],
   )
   const lineQueueItems = items.filter((item) => {
     if (item.type !== 'Sub Assy') return false
@@ -49,13 +72,14 @@ export function SubAssyStorePage() {
   }, [search, subAssyItems])
 
   const totalBoxes = subAssyItems.reduce(
-    (sum, item) => sum + Math.floor(item.store / item.packaging),
+    (sum, item) => sum + Math.floor(item.store / (item.packaging || 1)),
     0,
   )
   const lowStock = subAssyItems.filter((item) => item.status === 'low').length
   const needed = lineQueueItems.reduce((sum, item) => sum + item.taken, 0)
+  const parameterItem = subAssyItems[0]
 
-  const columns: Column<StockItem>[] = [
+  const columns: Column<StockItemRecord>[] = [
     {
       key: 'part',
       header: 'Part Number',
@@ -78,7 +102,7 @@ export function SubAssyStorePage() {
       align: 'right',
       render: (item) => (
         <span>
-          {Math.floor(item.store / item.packaging)} <span className="muted tiny">box</span>
+          {Math.floor(item.store / (item.packaging || 1))} <span className="muted tiny">box</span>
         </span>
       ),
     },
@@ -97,19 +121,22 @@ export function SubAssyStorePage() {
     {
       key: 'level',
       header: 'Level',
-      render: (item) => (
-        <div className="stock-level">
-          <div className="stock-level__top">
-            <strong>{Math.round((item.store / item.maxStore) * 100)}%</strong>
-            <span>{item.location}</span>
+      render: (item) => {
+        const percent = item.maxStore > 0 ? (item.store / item.maxStore) * 100 : 0
+        return (
+          <div className="stock-level">
+            <div className="stock-level__top">
+              <strong>{Math.round(percent)}%</strong>
+              <span>{item.location}</span>
+            </div>
+            <ProgressBar
+              value={percent}
+              thin
+              tone={item.status === 'low' ? 'orange' : 'green'}
+            />
           </div>
-          <ProgressBar
-            value={(item.store / item.maxStore) * 100}
-            thin
-            tone={item.status === 'low' ? 'orange' : 'green'}
-          />
-        </div>
-      ),
+        )
+      },
     },
     { key: 'status', header: 'Status', render: (item) => <StatusBadge status={item.status} /> },
   ]
@@ -140,6 +167,8 @@ export function SubAssyStorePage() {
           </Button>
         }
       />
+
+      {error && <Callout tone="danger" title="Gagal memuat">{error}</Callout>}
 
       <div className="kpi-grid">
         <StatCard
@@ -202,6 +231,7 @@ export function SubAssyStorePage() {
           rows={rows}
           rowKey={(row) => row.id}
           minWidth={860}
+          emptyMessage={loading ? 'Memuat data stok…' : 'Belum ada data Sub Assy.'}
           footer={
             <>
               <span>
@@ -249,19 +279,19 @@ export function SubAssyStorePage() {
           <div className="info-grid">
             <div className="info-item">
               <span className="info-label">Standard packaging</span>
-              <span className="info-value info-value--strong">35 pcs / box</span>
+              <span className="info-value info-value--strong">{formatNumber(parameterItem?.packaging ?? 0)} pcs / box</span>
             </div>
             <div className="info-item">
               <span className="info-label">Safety stock</span>
-              <span className="info-value info-value--strong">70 pcs</span>
+              <span className="info-value info-value--strong">{formatNumber(parameterItem?.safetyStock ?? 0)} pcs</span>
             </div>
             <div className="info-item">
               <span className="info-label">Max store</span>
-              <span className="info-value info-value--strong">140 pcs</span>
+              <span className="info-value info-value--strong">{formatNumber(parameterItem?.maxStore ?? 0)} pcs</span>
             </div>
             <div className="info-item">
               <span className="info-label">Lokasi</span>
-              <span className="info-value">R-G / SS / 01</span>
+              <span className="info-value">{parameterItem?.location ?? '—'}</span>
             </div>
           </div>
           <Callout tone="info" className="callout" style={{ marginTop: 14 }}>

@@ -1,31 +1,59 @@
-import { Boxes, CalendarDays, Download, Layers3, TriangleAlert, Warehouse } from 'lucide-react'
-import { useState } from 'react'
+import { Boxes, CalendarDays, Layers3, RefreshCw, TriangleAlert, Warehouse } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AreaChart } from '../../components/charts/AreaChart'
 import { BarChart } from '../../components/charts/BarChart'
 import { DonutChart } from '../../components/charts/DonutChart'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
+import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { usePreferences } from '../../contexts/PreferencesContext'
-import { inventoryHealth, inventoryTrend, stockItems } from '../../data/mock'
+import { describeApiError } from '../../lib/api'
+import { listLedger, listStock, type LedgerEntryRecord, type StockItemRecord } from '../../lib/inventoryApi'
 import { formatNumber } from '../../lib/utils'
-import type { StockItem } from '../../types'
 
 export function InventoryReportPage() {
-  const { t } = usePreferences()
+  const { t, formatDate } = usePreferences()
   const [period, setPeriod] = useState('12d')
   const [category, setCategory] = useState('all')
+  const [items, setItems] = useState<StockItemRecord[]>([])
+  const [ledger, setLedger] = useState<LedgerEntryRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
-  const rows = stockItems.filter((item) => category === 'all' || item.category === category)
-  const totalStore = stockItems.reduce((sum, item) => sum + item.store, 0)
-  const totalBuffer = stockItems.reduce((sum, item) => sum + item.buffer, 0)
-  const low = stockItems.filter((item) => item.status === 'low').length
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [nextItems, nextLedger] = await Promise.all([listStock(), listLedger()])
+      setItems(nextItems)
+      setLedger(nextLedger)
+    } catch (loadError) {
+      setError(describeApiError(loadError, 'Laporan inventory gagal dimuat.'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const columns: Column<StockItem>[] = [
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
+  const rows = useMemo(
+    () => items.filter((item) => category === 'all' || item.category === category),
+    [category, items],
+  )
+  const totalStore = items.reduce((sum, item) => sum + item.store, 0)
+  const totalBuffer = items.reduce((sum, item) => sum + item.buffer, 0)
+  const low = items.filter((item) => item.status === 'low').length
+  const statusCount = (status: StockItemRecord['status']) =>
+    items.filter((item) => item.status === status).length
+
+  const columns: Column<StockItemRecord>[] = [
     {
       key: 'part',
       header: 'Part Number',
@@ -44,25 +72,22 @@ export function InventoryReportPage() {
     { key: 'status', header: 'Status', render: (item) => <StatusBadge status={item.status} /> },
   ]
 
-  const trend = inventoryTrend.map((item) => ({
-    label: item.period,
-    store: item.store,
-    buffer: item.buffer,
-  }))
-  const visibleTrend = period === '12d' ? trend : trend.slice(2)
-  const labels = visibleTrend.map((item) => item.label)
-  const store = visibleTrend.map((item) => item.store)
-  const buffer = visibleTrend.map((item) => item.buffer)
+  const trendEntries = ledger.slice(0, 12).reverse()
+  const labels = trendEntries.length > 0
+    ? trendEntries.map((item) => new Date(item.time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }))
+    : ['Sekarang']
+  const store = trendEntries.length > 0 ? trendEntries.map((item) => item.balance) : [totalStore]
+  const buffer = trendEntries.length > 0 ? trendEntries.map(() => totalBuffer) : [totalBuffer]
   const inventoryHealthData = [
-    { label: t('Aman', 'Safe'), value: inventoryHealth.safe, color: '#10b981' },
-    { label: 'Low stock', value: inventoryHealth.low, color: '#f97316' },
-    { label: t('Kosong', 'Empty'), value: inventoryHealth.empty, color: '#ef4444' },
-    { label: 'Full store', value: inventoryHealth.full, color: '#38bdf8' },
+    { label: t('Aman', 'Safe'), value: statusCount('safe'), color: '#10b981' },
+    { label: 'Low stock', value: statusCount('low'), color: '#f97316' },
+    { label: t('Kosong', 'Empty'), value: statusCount('empty'), color: '#ef4444' },
+    { label: 'Full store', value: statusCount('full'), color: '#38bdf8' },
   ]
 
   const categoryTotals = ['Assy', 'Sub Assy', 'Press Part', 'Bolt/Nut', 'Child Part'].map((name) => ({
     name,
-    value: stockItems
+    value: items
       .filter((item) => item.category === name)
       .reduce((sum, item) => sum + item.store + item.buffer, 0),
   }))
@@ -79,7 +104,7 @@ export function InventoryReportPage() {
         meta={
           <>
             <span className="page-meta__item">
-              <CalendarDays size={12} /> 12 November 2026
+              <CalendarDays size={12} /> {formatDate(new Date())}
             </span>
             <span className="page-meta__item">
               <Warehouse size={12} /> Buffer &amp; Store
@@ -87,17 +112,19 @@ export function InventoryReportPage() {
           </>
         }
         actions={
-          <Button variant="secondary" leftIcon={<Download size={15} />}>
-            Export PDF
+          <Button variant="secondary" leftIcon={<RefreshCw size={15} />} loading={loading} onClick={() => void loadData()}>
+            Muat ulang
           </Button>
         }
       />
+
+      {error && <Callout tone="danger" title="Gagal memuat">{error}</Callout>}
 
       <div className="kpi-grid">
         <StatCard label="Total store" value={formatNumber(totalStore)} suffix="pcs" icon={Warehouse} tone="sky" note={t('Seluruh PN', 'All part numbers')} />
         <StatCard label="Total buffer" value={formatNumber(totalBuffer)} suffix="pcs" icon={Boxes} tone="orange" note={t('Menunggu store in', 'Awaiting store in')} />
         <StatCard label="Low stock" value={String(low)} suffix="PN" icon={TriangleAlert} tone="red" note={t('Butuh replenishment', 'Needs replenishment')} />
-        <StatCard label={t('Kategori', 'Category')} value="5" suffix={t('jenis', 'types')} icon={Layers3} tone="green" note="Assy — child part" />
+        <StatCard label={t('Kategori', 'Category')} value={String(new Set(items.map((item) => item.category)).size)} suffix={t('jenis', 'types')} icon={Layers3} tone="green" note="Assy — child part" />
       </div>
 
       <section className="card">
@@ -168,7 +195,7 @@ export function InventoryReportPage() {
           <DonutChart
             data={inventoryHealthData}
             size={172}
-            centerValue={String(stockItems.length)}
+            centerValue={String(items.length)}
             centerLabel={t('part number', 'part numbers')}
           />
         </section>
@@ -259,7 +286,7 @@ export function InventoryReportPage() {
             <h2 className="section-title">{t('Detail stok', 'Stock details')}</h2>
             <p className="section-sub">{rows.length} part number</p>
           </div>
-          <Badge tone="neutral">{t('Snapshot 09:12', 'Snapshot 09:12')}</Badge>
+          <Badge tone="neutral">{formatDate(new Date(), true)}</Badge>
         </div>
         <DataTable columns={columns} rows={rows} rowKey={(item) => item.id} minWidth={820} />
       </section>

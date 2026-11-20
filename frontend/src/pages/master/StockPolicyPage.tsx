@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
+import { FormDialog } from '../../components/ui/FormDialog'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
@@ -382,18 +383,21 @@ export function StockPolicyPage() {
       </div>
 
       {showForm && (
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">{form.editingPartNumber ? 'Ubah policy' : 'Policy baru'}</h2>
-              <p className="section-sub">
-                {form.editingPartNumber
-                  ? 'Part number tetap; kategori, standar qty, max store, safety stock, dan lokasi dapat diperbarui.'
-                  : 'Part number dibuat sekali dan tidak dapat diubah setelah tersimpan.'}
-              </p>
-            </div>
-            <Badge tone="success">Terhubung database</Badge>
-          </div>
+        <FormDialog
+          open={showForm}
+          onClose={closeForm}
+          titleId="stock-policy-form-title"
+          title={form.editingPartNumber ? 'Ubah policy' : 'Policy baru'}
+          subtitle={form.editingPartNumber
+            ? 'Part number tetap; kategori, standar qty, max store, safety stock, dan lokasi dapat diperbarui.'
+            : 'Part number dibuat sekali dan tidak dapat diubah setelah tersimpan.'}
+          badge={<Badge tone="success">Terhubung database</Badge>}
+        >
+          {error && (
+            <Callout tone="danger" title="Aksi gagal">
+              {error}
+            </Callout>
+          )}
 
           <form className="form-grid stock-policy-form" onSubmit={(event) => void savePolicy(event)}>
             <Field
@@ -403,6 +407,7 @@ export function StockPolicyPage() {
             >
               <input
                 id="policy-part-number"
+                autoFocus
                 className="input mono"
                 value={form.partNumber}
                 onChange={(event) =>
@@ -521,8 +526,7 @@ export function StockPolicyPage() {
               </Button>
             </div>
           </form>
-
-        </section>
+        </FormDialog>
       )}
 
       <section className="card">

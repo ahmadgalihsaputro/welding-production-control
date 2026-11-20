@@ -17,7 +17,7 @@ import {
 import type { ShiftConfig, ShiftNumber } from '../../types'
 import { formatNumber } from '../../lib/utils'
 import { describeApiError } from '../../lib/api'
-import { listParts, type ProductionPartRecord } from '../../lib/masterApi'
+import { listBom, listParts, type ProductionPartRecord } from '../../lib/masterApi'
 
 interface ShiftPlanningConfig {
   shifts: ShiftConfig[]
@@ -44,6 +44,8 @@ export function ProductionAllocationPage() {
   const [planning] = useState(readShiftPlanningConfig)
   const [message, setMessage] = useState('')
   const [parts, setParts] = useState<ProductionPartRecord[]>([])
+  const [bomParents, setBomParents] = useState<Set<string>>(new Set())
+  const [bomLoading, setBomLoading] = useState(true)
   const [cycleError, setCycleError] = useState('')
   const [cycleLoading, setCycleLoading] = useState(true)
 
@@ -51,14 +53,26 @@ export function ProductionAllocationPage() {
     let active = true
     void (async () => {
       try {
-        const nextParts = await listParts()
-        if (active) setParts(nextParts)
+        const [nextParts, bom] = await Promise.all([listParts(), listBom()])
+        if (active) {
+          setParts(nextParts)
+          setBomParents(
+            new Set(
+              bom
+                .filter((component) => component.type === 'Sub_Assy')
+                .map((component) => component.parentPartNumber),
+            ),
+          )
+        }
       } catch (loadError) {
         if (active) {
           setCycleError(describeApiError(loadError, 'Data cycle time gagal dimuat.'))
         }
       } finally {
-        if (active) setCycleLoading(false)
+        if (active) {
+          setCycleLoading(false)
+          setBomLoading(false)
+        }
       }
     })()
     return () => {
@@ -421,7 +435,8 @@ export function ProductionAllocationPage() {
                   ),
               )
               const part = partsByNumber.get(request.partNumber)
-              const missingBom = false
+              const missingBom =
+                !bomLoading && request.type === 'Assy' && !bomParents.has(request.partNumber)
               return (
                 <article className="glass-inset" key={request.id} style={{ padding: 14 }}>
                   <div className="row row--between row--wrap" style={{ gap: 12 }}>

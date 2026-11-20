@@ -3,109 +3,70 @@ import { useAuth } from '../../contexts/AuthContext'
 import { usePreferences } from '../../contexts/PreferencesContext'
 
 interface ConnectionIndicatorProps {
-  /** Optional className override */
   className?: string
+  showLabel?: boolean
 }
 
-/**
- * Connection indicator that shows backend connectivity status.
- * Green = connected, Red = disconnected/no response.
- * Only visible to admin role.
- */
-export function ConnectionIndicator({ className }: ConnectionIndicatorProps = {}) {
+/** Status koneksi backend nyata; tampil untuk semua peran yang sudah login. */
+export function ConnectionIndicator({ className, showLabel = false }: ConnectionIndicatorProps = {}) {
   const { user } = useAuth()
   const { t } = usePreferences()
   const [isConnected, setIsConnected] = useState(false)
   const [isChecking, setIsChecking] = useState(true)
 
   useEffect(() => {
-    // Only admin can see this indicator
-    if (user?.role !== 'admin') {
+    if (!user) {
       setIsChecking(false)
       return
     }
 
     let mounted = true
-    let abortCtrl: AbortController | null = null
+    let timer: number | undefined
 
     const checkConnection = async () => {
-      if (!mounted) return
-
-      const abort = new AbortController()
-      abortCtrl = abort
-
       try {
-        const response = await fetch('/api/health', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          signal: abort.signal,
-        })
-
-        if (mounted) {
-          if (response.ok) {
-            setIsConnected(true)
-          } else {
-            setIsConnected(false)
-          }
-        }
-      } catch (error) {
-        if (mounted) {
-          // Backend not reachable or request aborted
-          setIsConnected(false)
-        }
+        const response = await fetch('/api/health', { credentials: 'include' })
+        if (mounted) setIsConnected(response.ok)
+      } catch {
+        if (mounted) setIsConnected(false)
       } finally {
         if (mounted) {
-          // Schedule next check in 30 seconds
-          const timer = setTimeout(checkConnection, 30000)
-          // Cleanup on unmount
-          return () => {
-            mounted = false
-            clearTimeout(timer)
-          }
+          setIsChecking(false)
+          timer = window.setTimeout(() => void checkConnection(), 30_000)
         }
       }
     }
 
-    // Initial check
-    checkConnection()
-
-    // Cleanup on component unmount
+    void checkConnection()
     return () => {
       mounted = false
-      if (abortCtrl) {
-        abortCtrl.abort()
-      }
+      if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [user?.role])
+  }, [user])
 
-  // Show only for admin; for other roles, hide completely
-  if (user?.role !== 'admin') {
-    return null
-  }
-
-  const label = isConnected
-    ? t('Backend Terhubung', 'Backend connected')
-    : t('Backend Tidak Tersedia', 'Backend unavailable')
+  const label = isChecking
+    ? t('Memeriksa koneksi', 'Checking connection')
+    : isConnected
+      ? t('Backend Terhubung', 'Backend connected')
+      : t('Backend Tidak Tersedia', 'Backend unavailable')
   const classes = [
     'connection-indicator',
     className,
-    isConnected ? 'is-online' : 'is-offline',
+    showLabel && 'connection-indicator--labeled',
+    isChecking ? 'is-checking' : isConnected ? 'is-online' : 'is-offline',
   ]
     .filter(Boolean)
     .join(' ')
 
   return (
-    <div
-      className={classes}
-      role="status"
-      aria-live="polite"
-      aria-label={label}
-      title={label}
-    >
+    <div className={classes} role="status" aria-live="polite" aria-label={label} title={label}>
       <span className="indicator-dot" aria-hidden="true" />
+      {showLabel && (
+        <span className="connection-indicator__copy">
+          <strong>{t('Sistem', 'System')}</strong>
+          <span>{label}</span>
+        </span>
+      )}
     </div>
   )
 }

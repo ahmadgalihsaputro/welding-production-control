@@ -16,10 +16,8 @@ direpresentasikan sebagai halaman terpisah dengan data demo yang saling terhubun
   radial gauge achievement, sparkline, status mesin, antrian, alert material, dan aktivitas.
 - **Production Control** — jadwal Assy, produksi Assy, antrian Sub Assy, produksi Sub Assy,
   hasil produksi.
-- **Material Control** — permintaan material, pickup supply, return material, scan pickup Assy,
-  external material, penerimaan material.
-- **Inventory Control** — stock overview, production buffer, Assy store, Sub Assy store,
-  mutasi stok, stock adjustment.
+- **Inventory Control** — antrian supplier hasil scan, stock overview, production buffer, Assy
+  store, Sub Assy store, mutasi stok.
 - **Master Data** — model, part number, BOM (pilih Assy untuk melihat komposisi), cycle time
   dengan target item/jam 85%, machine/line, stock policy, inventory location, shift, dan
   konfigurasi kanban yang dapat diedit.
@@ -139,7 +137,7 @@ Password semua akun: **`wpc123`**
 Login memakai **username** atau **Employee ID** dan divalidasi backend. Contoh: `OA001` / `wpc123`.
 Setelah kredensial operator benar, operator memilih area kerja yang ditugaskan Admin (misalnya
 Robot G · Assy atau Robot G · SS.H). Area aktif dapat diganti melalui top bar; role tetap membatasi
-jenis pekerjaan yang bisa dibuka. Stasiun scan di `/supply/scan` juga memerlukan login.
+jenis pekerjaan yang bisa dibuka. Scanner yang sudah dipasangkan mengirim hasil scan ke `/api/scan` memakai kode pairing, tanpa akun login.
 
 Penugasan area tersimpan di database dan diatur lewat **User Management → User List**. Akun demo
 OA001 mendapat seluruh area Assy Robot G; OS001 mendapat seluruh area Sub Assy Robot G.
@@ -246,12 +244,11 @@ di `App.tsx`, dan (jika perlu) entri menu di `data/navigation.ts` + `config/acce
 
 | Modul | Rute |
 | --- | --- |
-| Auth & Supply Scan | `/login`, `/forgot-password`, `/supply/scan` |
+| Auth | `/login` |
 | Dashboard | `/` |
 | Production | `/production/schedule`, `/production/assy-queue`, `/production/assy`, `/production/queue`, `/production/sub-assy`, `/production/results` |
-| Material | `/material/request`, `/material/pickup`, `/material/return`, `/material/assy-pickup`, `/material/external`, `/material/receiving` |
-| Inventory | `/inventory/overview`, `/inventory/buffer`, `/inventory/assy-store`, `/inventory/sub-assy-store`, `/inventory/ledger`, `/inventory/adjustment` |
-| Master Data | `/master/structure`, `/master/models`, `/master/parts`, `/master/bom`, `/master/routing`, `/master/machines`, `/master/stock-policy`, `/master/locations`, `/master/shifts`, `/master/kanban` |
+| Inventory | `/material/supplier-queue`, `/inventory/overview`, `/inventory/buffer`, `/inventory/assy-store`, `/inventory/sub-assy-store`, `/inventory/ledger` |
+| Master Data | `/master/models`, `/master/parts`, `/master/bom`, `/master/cycle-time`, `/master/machines`, `/master/stock-policy`, `/master/locations`, `/master/shifts`, `/master/kanban`, `/master/work-areas` |
 | Reports | `/reports/production`, `/reports/inventory`, `/reports/material-usage`, `/reports/ng`, `/reports/transactions` |
 | Users | `/users/list`, `/users/roles`, `/users/devices` |
 | Settings | `/settings/profile`, `/settings/preferences`, `/settings/notifications`, `/settings/printing`, `/settings/backup` |

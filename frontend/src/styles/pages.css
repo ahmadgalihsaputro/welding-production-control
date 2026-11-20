@@ -1932,6 +1932,95 @@
   color: var(--muted);
 }
 
+.pairing-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--inset-bg);
+  color: var(--text-soft);
+  font-size: 10px;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.pairing-code:hover {
+  background: var(--glass-bg-strong);
+  border-color: var(--glass-line-strong);
+}
+
+.form-dialog,
+.device-dialog,
+.part-dialog {
+  max-width: calc(100% - 32px);
+  padding: 24px;
+  overflow: auto;
+  border-radius: var(--radius-lg);
+  scrollbar-gutter: stable;
+  animation: dialogIn 180ms ease-out;
+}
+
+.form-dialog,
+.part-dialog {
+  width: min(760px, 100%);
+  max-height: min(90dvh, 820px);
+}
+
+.device-dialog {
+  width: min(580px, 100%);
+  max-height: min(90vh, 760px);
+}
+
+.form-dialog--wide {
+  width: min(1040px, 100%);
+  max-height: min(92dvh, 900px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .form-dialog,
+  .device-dialog,
+  .part-dialog {
+    animation: none;
+  }
+}
+
+/* .glass sets position:relative; native modal centering needs fixed. */
+.form-dialog:modal,
+.device-dialog:modal,
+.part-dialog:modal {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  overscroll-behavior: contain;
+}
+
+.form-dialog::backdrop,
+.device-dialog::backdrop,
+.part-dialog::backdrop {
+  background: rgba(5, 12, 22, 0.38);
+  backdrop-filter: blur(9px) saturate(125%);
+  -webkit-backdrop-filter: blur(9px) saturate(125%);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.form-dialog .section-head,
+.part-dialog .section-head {
+  margin-bottom: 18px;
+}
+
+.form-dialog .form-grid,
+.part-dialog .form-grid {
+  gap: 14px;
+}
+
+.form-dialog .form-actions,
+.part-dialog .form-actions {
+  margin-top: 8px;
+}
+
 /* ---------- Reports ---------- */
 .report-filters {
   display: grid;

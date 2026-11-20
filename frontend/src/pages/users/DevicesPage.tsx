@@ -1,5 +1,5 @@
-import { Laptop, Monitor, Plus, Printer, RefreshCw, ScanLine, Signal, Tablet, Trash2, Wifi, WifiOff, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { Copy, Monitor, Plus, Printer, RefreshCw, ScanLine, Signal, Tablet, Trash2, Wifi, WifiOff, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
@@ -12,7 +12,6 @@ import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { usePreferences } from '../../contexts/PreferencesContext'
 import { describeApiError } from '../../lib/api'
 import { createDevice, deleteDevice, listDevices, updateDevice, type DeviceInput, type DeviceRecord } from '../../lib/masterApi'
-import type { Device } from '../../types'
 
 const deviceIcon = {
   Tablet: Tablet,
@@ -21,15 +20,22 @@ const deviceIcon = {
   Printer: Printer,
 }
 
-const statusTone: Record<Device['status'], 'green' | 'red' | 'amber'> = {
-  online: 'green',
-  offline: 'red',
-  maintenance: 'amber',
+const connectionTypeLabel: Record<'wireless' | 'bluetooth' | 'wired', string> = {
+  wireless: 'Wireless',
+  bluetooth: 'Bluetooth',
+  wired: 'Wired',
 }
 
-const connectionTypeLabel: Record<'wireless' | 'wired', string> = {
-  wireless: 'Wireless',
-  wired: 'Wired',
+const emptyForm: DeviceInput = {
+  name: '',
+  type: 'Scanner',
+  model: '',
+  location: '',
+  assignedTo: '',
+  status: 'offline',
+  connectionType: 'wireless',
+  pairingCode: null,
+  isDefault: false,
 }
 
 export function DevicesPage() {
@@ -43,45 +49,34 @@ export function DevicesPage() {
   const [notice, setNotice] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState<DeviceInput>({
-    name: '',
-    type: 'Scanner',
-    model: '',
-    location: '',
-    assignedTo: '',
-    status: 'offline',
-    connectionType: 'wireless',
-    isDefault: false,
-  })
+  const [form, setForm] = useState<DeviceInput>(emptyForm)
+  const dialogRef = useRef<HTMLDialogElement>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const data = await listDevices()
-      setDevices(data)
+      setDevices(await listDevices())
     } catch (loadError) {
       setError(describeApiError(loadError, t('Gagal memuat data device.', 'Failed to load device data.')))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (showForm && !dialog.open) dialog.showModal()
+    if (!showForm && dialog.open) dialog.close()
+  }, [showForm])
+
   const resetForm = () => {
-    setForm({
-      name: '',
-      type: 'Scanner',
-      model: '',
-      location: '',
-      assignedTo: '',
-      status: 'offline',
-      connectionType: 'wireless',
-      isDefault: false,
-    })
+    setForm(emptyForm)
     setEditingId(null)
     setShowForm(false)
     setError('')
@@ -102,26 +97,33 @@ export function DevicesPage() {
       assignedTo: device.assignedTo ?? '',
       status: device.status,
       connectionType: device.connectionType ?? 'wireless',
+      pairingCode: device.pairingCode,
       isDefault: device.isDefault,
     })
     setEditingId(device.id)
-    setShowForm(true)
     setError('')
     setNotice('')
+    setShowForm(true)
   }
 
-  const validateForm = (): string | null => {
-    if (!form.name.trim()) return t('Nama device wajib diisi.', 'Device name is required.')
-    if (!form.location.trim()) return t('Lokasi wajib diisi.', 'Location is required.')
-    if (form.type === 'Scanner' && !form.connectionType) return t('Tipe koneksi (wireless/wired) wajib diisi untuk Scanner.', 'Connection type (wireless/wired) is required for Scanner.')
-    return null
+  const copyPairingCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setError('')
+      setNotice(`${code} ${t('tersalin.', 'copied.')}`)
+    } catch {
+      setNotice('')
+      setError(t('Gagal menyalin kode pairing.', 'Failed to copy pairing code.'))
+    }
   }
 
   const saveDevice = async () => {
-    const validation = validateForm()
-    if (validation) {
-      setError(validation)
-      setNotice('')
+    if (!form.name.trim()) {
+      setError(t('Nama device wajib diisi.', 'Device name is required.'))
+      return
+    }
+    if (!form.location.trim()) {
+      setError(t('Lokasi wajib diisi.', 'Location is required.'))
       return
     }
 
@@ -137,8 +139,8 @@ export function DevicesPage() {
     const payload: DeviceInput = {
       ...form,
       model: form.model?.trim() || null,
-      connectionType:
-        form.type === 'Scanner' || form.type === 'Printer' ? form.connectionType : null,
+      assignedTo: form.assignedTo?.trim() || null,
+      connectionType: form.type === 'Scanner' || form.type === 'Printer' ? form.connectionType : null,
       isDefault: form.type === 'Printer' ? Boolean(form.isDefault) : false,
     }
 
@@ -216,32 +218,49 @@ export function DevicesPage() {
       render: (device) => {
         const Icon = deviceIcon[device.type]
         const supportsConnection = device.type === 'Scanner' || device.type === 'Printer'
-        const connBadge = supportsConnection && device.connectionType ? (
-          <Badge tone="sky" className="ml-2 text-xs">{connectionTypeLabel[device.connectionType]}</Badge>
-        ) : null
         return (
           <div className="user-cell">
-            <span className="device-card__icon" style={{ width: 30, height: 30 }}>
+            <span className="device-card__icon" aria-hidden="true">
               <Icon size={14} />
             </span>
             <div className="user-cell__copy">
-              <strong>{device.name}</strong>
-              <span>
-                {device.type}
-                {device.model ? ` · ${device.model}` : ''}
-                {connBadge}
-                {device.type === 'Printer' && device.isDefault && (
-                  <Badge tone="orange" className="ml-2 text-xs">{t('Default', 'Default')}</Badge>
-                )}
+              <strong title={device.name}>{device.name}</strong>
+              <span title={`${device.type}${device.model ? ` · ${device.model}` : ''}`}>
+                {device.type}{device.model ? ` · ${device.model}` : ''}
               </span>
+              <div className="row row--wrap">
+                {supportsConnection && device.connectionType && (
+                  <Badge tone="sky">{connectionTypeLabel[device.connectionType]}</Badge>
+                )}
+                {device.type === 'Printer' && device.isDefault && (
+                  <Badge tone="orange">{t('Default', 'Default')}</Badge>
+                )}
+              </div>
             </div>
           </div>
         )
       },
     },
     { key: 'location', header: t('Lokasi', 'Location'), render: (device) => <span className="stock-location">{device.location}</span> },
-    { key: 'assigned', header: t('Assigned to', 'Assigned to'), render: (device) => <span className="muted small">{device.assignedTo ?? '—'}</span> },
-    { key: 'seen', header: t('Last seen', 'Last seen'), render: (device) => <span className="muted small">{device.lastSeen ?? t('Belum pernah', 'Never')}</span> },
+    { key: 'assigned', header: t('Penugasan', 'Assignment'), render: (device) => <span className="muted small">{device.assignedTo ?? '—'}</span> },
+    {
+      key: 'pairing',
+      header: t('Pairing', 'Pairing'),
+      render: (device) => device.type === 'Scanner' && device.pairingCode ? (
+        <button
+          type="button"
+          className="pairing-code"
+          onClick={() => void copyPairingCode(device.pairingCode!)}
+          title={t('Salin kode pairing', 'Copy pairing code')}
+        >
+          <span className="mono">{device.pairingCode}</span>
+          <Copy size={12} aria-hidden="true" />
+        </button>
+      ) : (
+        <span className="muted">—</span>
+      ),
+    },
+    { key: 'seen', header: t('Terakhir aktif', 'Last seen'), render: (device) => <span className="muted small">{device.lastSeen ?? t('Belum pernah', 'Never')}</span> },
     { key: 'status', header: t('Status', 'Status'), render: (device) => <StatusBadge status={device.status} /> },
     {
       key: 'action',
@@ -273,27 +292,21 @@ export function DevicesPage() {
     },
   ]
 
-  const onlineCount = devices.filter((d) => d.status === 'online').length
-  const offlineCount = devices.filter((d) => d.status === 'offline').length
-  const maintenanceCount = devices.filter((d) => d.status === 'maintenance').length
+  const onlineCount = devices.filter((device) => device.status === 'online').length
+  const offlineCount = devices.filter((device) => device.status === 'offline').length
+  const maintenanceCount = devices.filter((device) => device.status === 'maintenance').length
 
   return (
     <div className="page">
       <PageHeader
         eyebrow={t('User Management', 'User Management')}
         title={t('Device Management', 'Device Management')}
-        subtitle={t('Perangkat terhubung ke WPC: tablet produksi, scanner supply (wireless/wired), printer kanban (wireless/wired), PC leader. Printer yang terdaftar di sini dipakai oleh konfigurasi Kanban dan Barcode & Printing.', 'Devices connected to WPC: production tablets, supply scanners (wireless/wired), kanban printers (wireless/wired), leader PCs. Printers registered here are used by Kanban configuration and Barcode & Printing.')}
+        subtitle={t('Daftarkan tablet, scanner, printer, dan PC. Scanner mendapat kode pairing untuk scan kanban tanpa login.', 'Register tablets, scanners, printers, and PCs. Scanners get a pairing code for login-free kanban scanning.')}
         meta={
           <>
-            <span className="page-meta__item">
-              <Wifi size={12} /> {onlineCount} {t('online', 'online')}
-            </span>
-            <span className="page-meta__item">
-              <WifiOff size={12} /> {offlineCount} {t('offline', 'offline')}
-            </span>
-            <span className="page-meta__item">
-              <Signal size={12} /> {maintenanceCount} {t('maintenance', 'maintenance')}
-            </span>
+            <span className="page-meta__item"><Wifi size={12} /> {onlineCount} {t('online', 'online')}</span>
+            <span className="page-meta__item"><WifiOff size={12} /> {offlineCount} {t('offline', 'offline')}</span>
+            <span className="page-meta__item"><Signal size={12} /> {maintenanceCount} {t('maintenance', 'maintenance')}</span>
           </>
         }
         actions={
@@ -319,199 +332,165 @@ export function DevicesPage() {
         <StatCard label={t('Offline', 'Offline')} value={String(offlineCount)} suffix="unit" icon={WifiOff} tone="red" note={t('Tidak terhubung', 'Not connected')} />
       </div>
 
-      <div className="device-grid">
-        {devices.map((device) => {
-          const Icon = deviceIcon[device.type]
-          return (
-            <div className="device-card" key={device.id}>
-              <div className="device-card__top">
-                <span className="device-card__icon">
-                  <Icon size={16} />
-                </span>
-                <StatusBadge status={device.status} />
-              </div>
-              <h3>{device.name}</h3>
-              <p>{device.location}</p>
-              <div className="row row--wrap" style={{ gap: 6 }}>
-                {(device.type === 'Scanner' || device.type === 'Printer') && device.connectionType && (
-                  <Badge tone="sky" className="text-xs">
-                    {connectionTypeLabel[device.connectionType]}
-                  </Badge>
-                )}
-                {device.type === 'Printer' && device.isDefault && <Badge tone="orange">Default printer</Badge>}
-              </div>
-              <div className="info-grid" style={{ marginTop: 10 }}>
-                <div className="info-item">
-                  <span className="info-label">Tipe</span>
-                  <span className="info-value">{device.type}</span>
-                </div>
-                <div className="info-item">
-                  <span className="info-label">Model</span>
-                  <span className="info-value">{device.model ?? '—'}</span>
-                </div>
-                <div className="info-item">
-                  <span className="info-label">Assigned</span>
-                  <span className="info-value">{device.assignedTo ?? '—'}</span>
-                </div>
-                <div className="info-item">
-                  <span className="info-label">Kanban</span>
-                  <span className="info-value">
-                    {device.type === 'Printer' ? `${device.kanbanConfigCount} konfigurasi` : '—'}
-                  </span>
-                </div>
-              </div>
-              <div className="device-card__foot">
-                <span className="row" style={{ gap: 4 }}>
-                  <Laptop size={11} /> {device.lastSeen ?? 'Belum pernah'}
-                </span>
-                <Button size="sm" variant="ghost" onClick={() => toggleStatus(device)} loading={busyId === device.id}>
-                  {device.status === 'online' ? 'Disconnect' : 'Connect'}
-                </Button>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      <Callout tone="info" title={t('Cara pairing scanner', 'Scanner pairing')}>
+        {t('Salin kode pada kolom Pairing, lalu set sebagai prefix di scanner (misalnya ', 'Copy the code in the Pairing column and set it as the scanner prefix (for example ')}
+        <span className="mono">SCN-XXXXXXXX|</span>
+        {t('). Scan berikutnya dikenali otomatis tanpa login. Hubungkan scanner lewat WiFi, Bluetooth, atau kabel.', '). Subsequent scans are identified automatically without login. Connect the scanner via WiFi, Bluetooth, or cable.')}
+      </Callout>
 
       <section className="card">
         <div className="section-head">
           <div>
-            <h2 className="section-title">Daftar perangkat</h2>
-            <p className="section-sub">Status dan penugasan device</p>
+            <h2 className="section-title">{t('Daftar perangkat', 'Devices')}</h2>
+            <p className="section-sub">{t('Status, koneksi, dan penugasan device', 'Device status, connection, and assignment')}</p>
           </div>
-          <Badge tone="sky">{onlineCount} aktif</Badge>
+          <Badge tone="sky">{onlineCount} {t('aktif', 'active')}</Badge>
         </div>
-        <DataTable columns={columns} rows={devices} rowKey={(device) => device.id} minWidth={820} />
+        <DataTable columns={columns} rows={devices} rowKey={(device) => device.id} minWidth={980} />
       </section>
 
-      {showForm && (
-        <section className="card" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)', padding: 20 }}>
-          <div className="card" style={{ width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto' }}>
-            <div className="section-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 className="section-title">{editingId ? 'Ubah device' : 'Daftarkan device baru'}</h2>
-                <p className="section-sub">
-                  {editingId
-                    ? 'Perbarui data device. Koneksi (wireless/wired) berlaku untuk Scanner dan Printer.'
-                    : 'Device yang didaftarkan di sini langsung tersimpan ke database dan dapat dipantau statusnya.'}
-                </p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={resetForm}><X size={16} /></Button>
-            </div>
-
-            <div className="form-grid" style={{ marginTop: 16 }}>
-              <Field label="Nama device" htmlFor="device-name">
-                <input
-                  id="device-name"
-                  className="input"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Contoh: Scanner Supply Kiosk 01"
-                />
-              </Field>
-              <Field label="Tipe device" htmlFor="device-type">
-                <select
-                  id="device-type"
-                  className="select"
-                  value={form.type}
-                  onChange={(e) => setForm({ ...form, type: e.target.value as DeviceInput['type'] })}
-                >
-                  <option value="Tablet">Tablet (Produksi)</option>
-                  <option value="PC">PC (Leader Station)</option>
-                  <option value="Scanner">Scanner QR (Supply/Pickup)</option>
-                  <option value="Printer">Printer Kanban</option>
-                </select>
-              </Field>
-              {(form.type === 'Scanner' || form.type === 'Printer') && (
-                <Field label="Model perangkat" htmlFor="device-model" hint="Contoh: Zebra DS2208 / Zebra ZT230.">
-                  <input
-                    id="device-model"
-                    className="input"
-                    value={form.model ?? ''}
-                    onChange={(e) => setForm({ ...form, model: e.target.value })}
-                    placeholder="Model scanner atau printer"
-                  />
-                </Field>
-              )}
-              <Field label="Lokasi" htmlFor="device-location">
-                <input
-                  id="device-location"
-                  className="input"
-                  value={form.location}
-                  onChange={(e) => setForm({ ...form, location: e.target.value })}
-                  placeholder="Contoh: Robot G — Area Assy / Material Supply / Leader Room"
-                />
-              </Field>
-              <Field label="Assigned to (opsional)" htmlFor="device-assigned">
-                <input
-                  id="device-assigned"
-                  className="input"
-                  value={form.assignedTo ?? ''}
-                  onChange={(e) => setForm({ ...form, assignedTo: e.target.value })}
-                  placeholder="Nama user/team, mis: Supply Kiosk / Andri Setiawan"
-                />
-              </Field>
-              {(form.type === 'Scanner' || form.type === 'Printer') && (
-                <Field label="Tipe koneksi" htmlFor="device-connection" hint="Scanner: USB/Serial atau WiFi/BLE. Printer: USB/LAN atau WiFi.">
-                  <select
-                    id="device-connection"
-                    className="select"
-                    value={form.connectionType ?? 'wireless'}
-                    onChange={(e) => setForm({ ...form, connectionType: e.target.value as 'wireless' | 'wired' })}
-                  >
-                    <option value="wireless">Wireless (WiFi/Bluetooth)</option>
-                    <option value="wired">Wired (USB/Serial/LAN)</option>
-                  </select>
-                </Field>
-              )}
-              {form.type === 'Printer' && (
-                <Field label="Printer default" htmlFor="device-default" hint="Dipakai sebagai printer utama pada pengaturan cetak.">
-                  <select
-                    id="device-default"
-                    className="select"
-                    value={form.isDefault ? 'yes' : 'no'}
-                    onChange={(e) => setForm({ ...form, isDefault: e.target.value === 'yes' })}
-                  >
-                    <option value="no">Bukan default</option>
-                    <option value="yes">Jadikan printer default</option>
-                  </select>
-                </Field>
-              )}
-              <Field label="Status awal" htmlFor="device-status">
-                <select
-                  id="device-status"
-                  className="select"
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value as DeviceInput['status'] })}
-                >
-                  <option value="offline">Offline</option>
-                  <option value="online">Online</option>
-                  <option value="maintenance">Maintenance</option>
-                </select>
-              </Field>
-            </div>
-
-            <div className="form-actions" style={{ marginTop: 16 }}>
-              <Button variant="secondary" onClick={resetForm} disabled={saving}>
-                Batal
-              </Button>
-              <Button variant="primary" leftIcon={<Plus size={15} />} loading={saving} onClick={() => void saveDevice()}>
-                {editingId ? 'Simpan perubahan' : 'Simpan device'}
-              </Button>
-            </div>
+      <dialog
+        ref={dialogRef}
+        className="device-dialog glass glass--strong"
+        onCancel={resetForm}
+        aria-labelledby="device-form-title"
+      >
+        <div className="section-head">
+          <div>
+            <h2 className="section-title" id="device-form-title">
+              {editingId ? t('Ubah device', 'Edit device') : t('Daftarkan device', 'Register device')}
+            </h2>
+            <p className="section-sub">
+              {editingId
+                ? t('Perbarui data device yang terdaftar.', 'Update the registered device.')
+                : t('Device baru langsung tersimpan ke database.', 'New devices are saved to the database immediately.')}
+            </p>
           </div>
-        </section>
-      )}
-
-      <Callout tone="info" title="Pairing & Koneksi Device">
-        <div style={{ display: 'grid', gap: 8 }}>
-          <div><strong>Scanner Wired (USB/Serial):</strong> Colok ke PC host, lalu gunakan driver virtual COM port pada halaman supply scan.</div>
-          <div><strong>Scanner Wireless (WiFi/BLE):</strong> Hubungkan scanner ke jaringan lokal atau pairing Bluetooth sebelum dipakai.</div>
-          <div><strong>Printer Wired (USB/LAN):</strong> Hubungkan printer ke PC host atau jaringan kabel, lalu pilih sebagai default.</div>
-          <div><strong>Printer Wireless:</strong> Hubungkan printer ke WiFi yang sama dengan jaringan aplikasi.</div>
-          <div><strong>Status Online/Offline:</strong> Diperbarui saat tombol Hubungkan/Putuskan ditekan dan tersimpan di database.</div>
+          <Button variant="ghost" size="sm" onClick={resetForm} aria-label={t('Tutup', 'Close')}>
+            <X size={16} />
+          </Button>
         </div>
-      </Callout>
+
+        <form onSubmit={(event) => { event.preventDefault(); void saveDevice() }}>
+          <div className="form-grid">
+            <Field label={t('Nama device', 'Device name')} htmlFor="device-name">
+              <input
+                id="device-name"
+                className="input"
+                value={form.name}
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                placeholder="Contoh: Scanner Supply Kiosk 01"
+                autoFocus
+              />
+            </Field>
+            <Field label={t('Tipe device', 'Device type')} htmlFor="device-type">
+              <select
+                id="device-type"
+                className="select"
+                value={form.type}
+                onChange={(event) => setForm({ ...form, type: event.target.value as DeviceInput['type'] })}
+              >
+                <option value="Tablet">Tablet (Produksi)</option>
+                <option value="PC">PC (Leader Station)</option>
+                <option value="Scanner">Scanner QR (Supply/Pickup)</option>
+                <option value="Printer">Printer Kanban</option>
+              </select>
+            </Field>
+            {(form.type === 'Scanner' || form.type === 'Printer') && (
+              <Field label={t('Model perangkat', 'Device model')} htmlFor="device-model" hint="Contoh: Zebra DS2208 / Zebra ZT230.">
+                <input
+                  id="device-model"
+                  className="input"
+                  value={form.model ?? ''}
+                  onChange={(event) => setForm({ ...form, model: event.target.value })}
+                  placeholder="Model scanner atau printer"
+                />
+              </Field>
+            )}
+            <Field label={t('Lokasi', 'Location')} htmlFor="device-location">
+              <input
+                id="device-location"
+                className="input"
+                value={form.location}
+                onChange={(event) => setForm({ ...form, location: event.target.value })}
+                placeholder="Contoh: Material Supply / Robot G — Area Assy"
+              />
+            </Field>
+            <Field label={t('Penugasan (opsional)', 'Assignment (optional)')} htmlFor="device-assigned">
+              <input
+                id="device-assigned"
+                className="input"
+                value={form.assignedTo ?? ''}
+                onChange={(event) => setForm({ ...form, assignedTo: event.target.value })}
+                placeholder="Nama user/team, mis: Supply Kiosk / Andri Setiawan"
+              />
+            </Field>
+            {(form.type === 'Scanner' || form.type === 'Printer') && (
+              <Field label={t('Tipe koneksi', 'Connection type')} htmlFor="device-connection" hint="WiFi, Bluetooth, atau kabel (USB/Serial/LAN).">
+                <select
+                  id="device-connection"
+                  className="select"
+                  value={form.connectionType ?? 'wireless'}
+                  onChange={(event) => setForm({ ...form, connectionType: event.target.value as DeviceInput['connectionType'] })}
+                >
+                  <option value="wireless">Wireless (WiFi)</option>
+                  <option value="bluetooth">Bluetooth (BLE)</option>
+                  <option value="wired">Wired (USB/Serial/LAN)</option>
+                </select>
+              </Field>
+            )}
+            <Field label={t('Status', 'Status')} htmlFor="device-status">
+              <select
+                id="device-status"
+                className="select"
+                value={form.status}
+                onChange={(event) => setForm({ ...form, status: event.target.value as DeviceInput['status'] })}
+              >
+                <option value="offline">Offline</option>
+                <option value="online">Online</option>
+                <option value="maintenance">Maintenance</option>
+              </select>
+            </Field>
+            {form.type === 'Printer' && (
+              <Field label={t('Printer default', 'Default printer')} htmlFor="device-default" hint="Dipakai sebagai printer utama pada pengaturan cetak.">
+                <select
+                  id="device-default"
+                  className="select"
+                  value={form.isDefault ? 'yes' : 'no'}
+                  onChange={(event) => setForm({ ...form, isDefault: event.target.value === 'yes' })}
+                >
+                  <option value="no">{t('Bukan default', 'Not default')}</option>
+                  <option value="yes">{t('Jadikan default', 'Make default')}</option>
+                </select>
+              </Field>
+            )}
+            {form.type === 'Scanner' && form.pairingCode && (
+              <Field
+                label={t('Kode pairing scanner', 'Scanner pairing code')}
+                htmlFor="device-pairing"
+                className="span-2"
+                hint={t('Set sebagai prefix di scanner: kode ini diikuti tanda | lalu barcode. Scan langsung dikenali tanpa login.', 'Set as the scanner prefix: this code followed by | then the barcode. Scans are identified without login.')}
+              >
+                <div className="row">
+                  <input id="device-pairing" className="input mono" value={form.pairingCode} readOnly />
+                  <Button type="button" variant="secondary" onClick={() => void copyPairingCode(form.pairingCode!)}>
+                    <Copy size={14} /> {t('Salin', 'Copy')}
+                  </Button>
+                </div>
+              </Field>
+            )}
+          </div>
+
+          <div className="form-actions">
+            <Button type="button" variant="secondary" onClick={resetForm} disabled={saving}>
+              {t('Batal', 'Cancel')}
+            </Button>
+            <Button type="submit" variant="primary" leftIcon={<Plus size={15} />} loading={saving}>
+              {editingId ? t('Simpan perubahan', 'Save changes') : t('Simpan device', 'Save device')}
+            </Button>
+          </div>
+        </form>
+      </dialog>
     </div>
   )
 }

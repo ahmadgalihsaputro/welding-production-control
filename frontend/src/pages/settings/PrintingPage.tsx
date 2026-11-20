@@ -34,7 +34,7 @@ import {
   type PrintingSettings,
 } from '../../lib/settingsApi'
 
-const connectionLabel = { wireless: 'Wireless', wired: 'Wired' } as const
+const connectionLabel = { wireless: 'Wireless', bluetooth: 'Bluetooth', wired: 'Wired' } as const
 const sizeLabel: Record<PrintingSettings['labelSize'], string> = {
   '100x150': '100 × 150 mm',
   '80x100': '80 × 100 mm',

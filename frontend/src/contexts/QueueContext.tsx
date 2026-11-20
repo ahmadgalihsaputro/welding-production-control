@@ -137,7 +137,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   }, [user, t])
 
   useEffect(() => {
-    if (!user) {
+    const needsProduction = ['operator_assy', 'operator_sub_assy', 'operator_both', 'leader', 'admin']
+    if (!user || !needsProduction.includes(user.role)) {
       setState(initialState)
       itemsRef.current = []
       return

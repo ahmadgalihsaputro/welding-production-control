@@ -13,7 +13,8 @@
     "prisma:sync-workbook": "tsx prisma/seed.ts --workbook-only",
     "db:start": "/usr/lib/postgresql/16/bin/pg_ctl -D .pgdata -o \"-p 5433 -k /tmp\" -l /tmp/wpc-pg.log start",
     "db:stop": "/usr/lib/postgresql/16/bin/pg_ctl -D .pgdata stop",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

@@ -116,6 +116,7 @@ export function RolesPermissionsPage() {
       {loading && (
         <Callout tone="info">Memuat jumlah akun per role dari server…</Callout>
       )}
+      <Callout tone="warning">Matriks berikut hanya referensi produk, bukan aturan yang dijalankan aplikasi. Aturan akses nyata mengikuti menu dan endpoint yang tersedia untuk tiap role.</Callout>
 
       <div className="kpi-grid kpi-grid--3">
         <StatCard label="Role terdefinisi" value="6" suffix="role" icon={ShieldCheck} tone="orange" note="Operator sampai management" />

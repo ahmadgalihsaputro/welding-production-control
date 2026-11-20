@@ -4,6 +4,7 @@ import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
+import { FormDialog } from '../../components/ui/FormDialog'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
@@ -190,7 +191,7 @@ export function WorkAreasPage() {
         }
       />
 
-      {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
+      {error && !editingUser && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
       {notice && <Callout tone="success">{notice}</Callout>}
       {loading && users.length === 0 && <Callout tone="info">Memuat daftar user dan PN…</Callout>}
 
@@ -201,49 +202,49 @@ export function WorkAreasPage() {
         <StatCard label="Skill PN" value={String(skillCount)} suffix="relasi" icon={UsersRound} tone="amber" />
       </div>
 
-      {editingUser && (
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">Skill {editingUser.name}</h2>
-              <p className="section-sub">Pilih PN; line dan jenis part mengikuti data Master Part.</p>
-            </div>
-            <Badge tone="sky">{selectedPartNumbers.length} PN dipilih</Badge>
-          </div>
-          {eligibleParts.length > 0 ? (
-            <>
-              <SearchInput
-                value={skillSearch}
-                onChange={setSkillSearch}
-                placeholder="Cari PN, line, atau proses…"
-              />
-              <div className="stack-sm" style={{ maxHeight: 360, overflowY: 'auto', marginTop: 12 }}>
-                {eligibleParts.map((part) => (
-                  <label className="checkbox" key={part.partNumber}>
-                    <input
-                      type="checkbox"
-                      checked={selectedPartNumbers.includes(part.partNumber)}
-                      onChange={() => togglePart(part.partNumber)}
-                    />
-                    <span>
-                      <strong className="mono">{part.partNumber}</strong>{' '}
-                      <span className="muted small">
-                        ({part.line} · {part.type === 'Sub_Assy' ? 'Sub Assy' : 'Assy'})
-                      </span>
+      <FormDialog
+        open={Boolean(editingUser)}
+        onClose={closeEditor}
+        titleId="work-area-skill-form-title"
+        title={`Skill ${editingUser?.name ?? ''}`}
+        subtitle="Pilih PN; line dan jenis part mengikuti data Master Part."
+        badge={<Badge tone="sky">{selectedPartNumbers.length} PN dipilih</Badge>}
+      >
+        {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
+        {eligibleParts.length > 0 ? (
+          <>
+            <SearchInput
+              value={skillSearch}
+              onChange={setSkillSearch}
+              placeholder="Cari PN, line, atau proses…"
+            />
+            <div className="stack-sm" style={{ maxHeight: 360, overflowY: 'auto', marginTop: 12 }}>
+              {eligibleParts.map((part, index) => (
+                <label className="checkbox" key={part.partNumber}>
+                  <input
+                    type="checkbox"
+                    autoFocus={index === 0}
+                    checked={selectedPartNumbers.includes(part.partNumber)}
+                    onChange={() => togglePart(part.partNumber)}
+                  />
+                  <span>
+                    <strong className="mono">{part.partNumber}</strong>{' '}
+                    <span className="muted small">
+                      ({part.line} · {part.type === 'Sub_Assy' ? 'Sub Assy' : 'Assy'})
                     </span>
-                  </label>
-                ))}
-              </div>
-            </>
-          ) : (
-            <Callout tone="warning">Belum ada part produksi yang sesuai role user.</Callout>
-          )}
-          <div className="form-actions">
-            <Button variant="secondary" onClick={closeEditor} disabled={saving}>Batal</Button>
-            <Button variant="primary" loading={saving} onClick={() => void saveSkills()}>Simpan skill</Button>
-          </div>
-        </section>
-      )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </>
+        ) : (
+          <Callout tone="warning">Belum ada part produksi yang sesuai role user.</Callout>
+        )}
+        <div className="form-actions">
+          <Button variant="secondary" onClick={closeEditor} disabled={saving}>Batal</Button>
+          <Button variant="primary" loading={saving} onClick={() => void saveSkills()}>Simpan skill</Button>
+        </div>
+      </FormDialog>
 
       <section className="card">
         <div className="table-toolbar">

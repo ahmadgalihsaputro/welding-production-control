@@ -134,6 +134,10 @@ model ProductionPart {
   ngRecords   NgShiftRecord[]
   userSkills  UserPartSkill[]
   kanbanConfigs KanbanPartConfig[]
+  stockItem   StockItem?  @relation(fields: [partNumber], references: [partNumber], onDelete: Restrict)
+  bomParents  BomComponent[] @relation("BomComponentParent")
+  schedules   ScheduleItem[]
+  routings    Routing[]
 }
 
 model Machine {
@@ -155,6 +159,9 @@ model BomComponent {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  parentPart  ProductionPart @relation("BomComponentParent", fields: [parentPartNumber], references: [partNumber], onDelete: Restrict)
+  component   StockItem     @relation("BomComponentStock", fields: [componentPartNumber], references: [partNumber], onDelete: Restrict)
+
   @@unique([parentPartNumber, componentPartNumber])
 }
 
@@ -170,6 +177,8 @@ model ScheduleItem {
   line        String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  part        ProductionPart @relation(fields: [partNumber], references: [partNumber], onDelete: Restrict)
 }
 
 model ProductionRequest {
@@ -291,6 +300,8 @@ model MaterialRequest {
   createdAt   DateTime @default(now())
   requester   String
   updatedAt   DateTime @updatedAt
+
+  stock       StockItem @relation(fields: [partNumber], references: [partNumber], onDelete: Restrict)
 }
 
 model StockItem {
@@ -307,6 +318,12 @@ model StockItem {
   status      StockStatus @default(safe)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+
+  productionPart  ProductionPart?
+  bomComponents   BomComponent[]  @relation("BomComponentStock")
+  materialRequests MaterialRequest[]
+  bufferItems     BufferItem[]
+  ledgerEntries   LedgerEntry[]
 }
 
 model BufferItem {
@@ -320,6 +337,8 @@ model BufferItem {
   status         String   @default("pending")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  stock       StockItem @relation(fields: [partNumber], references: [partNumber], onDelete: Restrict)
 }
 
 model LedgerEntry {
@@ -333,6 +352,8 @@ model LedgerEntry {
   reference  String
   user       String
   createdAt  DateTime @default(now())
+
+  stock       StockItem @relation(fields: [partNumber], references: [partNumber], onDelete: Restrict)
 }
 
 model ProductionModel {
@@ -366,6 +387,8 @@ model Routing {
   status        String   @default("active")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  part        ProductionPart @relation(fields: [partNumber], references: [partNumber], onDelete: Restrict)
 
   @@unique([partNumber, model, version])
 }
@@ -425,7 +448,8 @@ model Device {
   assignedTo    String?
   status        String    @default("offline")
   lastSeen      DateTime?
-  connectionType String?  // 'wireless' | 'wired' for scanners and printers
+  connectionType String?  // 'wireless' | 'bluetooth' | 'wired' for scanners and printers
+  pairingCode    String?  @unique // kode yang dikirim scanner saat scan tanpa login
   isDefault     Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

@@ -104,6 +104,18 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
   const lineRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setSearchOpen(true)
+        searchInputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   useClickOutside(notifRef, () => setNotifOpen(false), notifOpen)
   useClickOutside(userRef, () => setUserOpen(false), userOpen)
   useClickOutside(lineRef, () => setLineOpen(false), lineOpen)
@@ -226,7 +238,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
             ref={searchInputRef}
             className="input"
             type="search"
-            placeholder={t('Cari menu, PN, Kanban…', 'Search menu, PN, Kanban…')}
+            placeholder={t('Cari menu…', 'Search menu…')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onFocus={() => setSearchFocused(true)}

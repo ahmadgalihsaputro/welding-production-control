@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
+import { FormDialog } from '../../components/ui/FormDialog'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
@@ -266,23 +267,21 @@ export function MachinesPage() {
         <StatCard label="Contoh nama" value="Robot G" icon={Cog} tone="sky" note="Robot H · Robot A" />
       </div>
 
-      {showForm && (
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">
-                {form.machineIds.length > 0 ? 'Ubah mesin / line' : 'Mesin / line baru'}
-              </h2>
-              <p className="section-sub">Satu baris mewakili satu mesin produksi, bukan jenis proses.</p>
-            </div>
-            <Badge tone="success">Terhubung database</Badge>
-          </div>
-
-          <form className="form-grid master-machine-form" onSubmit={(event) => void saveMachine(event)}>
+      <FormDialog
+        open={showForm}
+        onClose={closeForm}
+        titleId="machine-form-title"
+        title={form.machineIds.length > 0 ? 'Ubah mesin / line' : 'Mesin / line baru'}
+        subtitle="Satu baris mewakili satu mesin produksi, bukan jenis proses."
+        badge={<Badge tone="success">Terhubung database</Badge>}
+      >
+        {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
+        <form className="form-grid master-machine-form" onSubmit={(event) => void saveMachine(event)}>
             <Field label="Nama mesin / line" htmlFor="machine-line" hint="Contoh: Robot G, Robot H, atau Robot A.">
               <input
                 id="machine-line"
                 className="input"
+                autoFocus
                 value={form.line}
                 onChange={(event) => setForm((current) => ({ ...current, line: event.target.value }))}
                 placeholder="Robot G"
@@ -312,8 +311,7 @@ export function MachinesPage() {
               </Button>
             </div>
           </form>
-        </section>
-      )}
+      </FormDialog>
 
       <section className="card">
         <div className="table-toolbar">

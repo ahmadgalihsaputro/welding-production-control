@@ -104,11 +104,13 @@ export function MaterialUsagePage() {
           </>
         }
         actions={
-          <Button variant="secondary" leftIcon={<Download size={15} />}>
+          <Button variant="secondary" leftIcon={<Download size={15} />} disabled title="Data contoh belum bisa diekspor">
             Export usage
           </Button>
         }
       />
+
+      <Callout tone="warning">Data contoh untuk simulasi; belum terhubung ke transaksi scanner atau mutasi stok nyata. Ekspor dinonaktifkan.</Callout>
 
       <div className="kpi-grid">
         <StatCard label="Material taken" value={formatNumber(totalTaken)} suffix="pcs" icon={PackagePlus} tone="orange" note="Seluruh pickup" />

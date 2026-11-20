@@ -20,7 +20,7 @@ const icons = {
 export function Callout({ children, tone = 'info', title, className, style }: CalloutProps) {
   const Icon = icons[tone]
   return (
-    <div className={cn('callout', `callout--${tone}`, className)} style={style}>
+    <div className={cn('callout', `callout--${tone}`, className)} style={style} role={tone === 'danger' ? 'alert' : undefined}>
       <div className="callout__icon">
         <Icon size={15} />
       </div>

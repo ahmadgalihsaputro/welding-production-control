@@ -4,12 +4,13 @@ interface FieldProps {
   label: string
   htmlFor?: string
   hint?: string
+  hintId?: string
   action?: ReactNode
   children: ReactNode
   className?: string
 }
 
-export function Field({ label, htmlFor, hint, action, children, className }: FieldProps) {
+export function Field({ label, htmlFor, hint, hintId, action, children, className }: FieldProps) {
   return (
     <div className={className ? `field ${className}` : 'field'}>
       <div className="field-label">
@@ -17,7 +18,7 @@ export function Field({ label, htmlFor, hint, action, children, className }: Fie
         {action}
       </div>
       {children}
-      {hint && <span className="field-hint">{hint}</span>}
+      {hint && <span id={hintId} className="field-hint">{hint}</span>}
     </div>
   )
 }

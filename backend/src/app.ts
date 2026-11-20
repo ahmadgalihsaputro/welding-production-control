@@ -9,6 +9,7 @@ import dashboardRoutes from './routes/dashboard.js'
 import productionRoutes from './routes/production.js'
 import materialRoutes from './routes/material.js'
 import inventoryRoutes from './routes/inventory.js'
+import scanRoutes from './routes/scan.js'
 import masterRoutes from './routes/master.js'
 import reportRoutes from './routes/report.js'
 import { errorHandler, notFoundHandler } from './middleware/error.js'
@@ -41,6 +42,7 @@ app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/production', productionRoutes)
 app.use('/api/material', materialRoutes)
 app.use('/api/inventory', inventoryRoutes)
+app.use('/api/scan', scanRoutes)
 app.use('/api/master', masterRoutes)
 app.use('/api/report', reportRoutes)
 

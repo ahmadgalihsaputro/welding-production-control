@@ -10,20 +10,13 @@ import { PreferencesProvider } from './contexts/PreferencesContext'
 import { LoginPage } from './pages/auth/LoginPage'
 import { AssyQueuePage } from './pages/production/AssyQueuePage'
 import { ProductionAllocationPage } from './pages/production/ProductionAllocationPage'
-import { SupplyScanPage } from './pages/supply/SupplyScanPage'
 import { DashboardPage } from './pages/dashboard/DashboardPage'
 import { AssyStorePage } from './pages/inventory/AssyStorePage'
 import { ProductionBufferPage } from './pages/inventory/ProductionBufferPage'
-import { StockAdjustmentPage } from './pages/inventory/StockAdjustmentPage'
 import { StockLedgerPage } from './pages/inventory/StockLedgerPage'
 import { StockOverviewPage } from './pages/inventory/StockOverviewPage'
 import { SubAssyStorePage } from './pages/inventory/SubAssyStorePage'
-import { AssyPickupPage } from './pages/material/AssyPickupPage'
-import { ExternalQueuePage } from './pages/material/ExternalQueuePage'
-import { MaterialReceivingPage } from './pages/material/MaterialReceivingPage'
-import { MaterialRequestPage } from './pages/material/MaterialRequestPage'
-import { MaterialReturnPage } from './pages/material/MaterialReturnPage'
-import { SupplyPickupPage } from './pages/material/SupplyPickupPage'
+import { SupplierQueuePage } from './pages/material/SupplierQueuePage'
 import { BomPage } from './pages/master/BomPage'
 import { CycleTimePage } from './pages/master/CycleTimePage'
 import { KanbanConfigPage } from './pages/master/KanbanConfigPage'
@@ -64,14 +57,6 @@ export default function App() {
             <BrowserRouter>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
-              <Route
-                path="/supply/scan"
-                element={
-                  <RequireAuth>
-                    <SupplyScanPage />
-                  </RequireAuth>
-                }
-              />
 
               <Route
                 element={
@@ -92,19 +77,13 @@ export default function App() {
                 <Route path="/production/sub-assy" element={<SubAssyProductionPage />} />
                 <Route path="/production/results" element={<ProductionResultsPage />} />
 
-              <Route path="/material/request" element={<MaterialRequestPage />} />
-              <Route path="/material/pickup" element={<SupplyPickupPage />} />
-              <Route path="/material/return" element={<MaterialReturnPage />} />
-              <Route path="/material/assy-pickup" element={<AssyPickupPage />} />
-              <Route path="/material/external" element={<ExternalQueuePage />} />
-              <Route path="/material/receiving" element={<MaterialReceivingPage />} />
+              <Route path="/material/supplier-queue" element={<SupplierQueuePage />} />
 
               <Route path="/inventory/overview" element={<StockOverviewPage />} />
               <Route path="/inventory/buffer" element={<ProductionBufferPage />} />
               <Route path="/inventory/assy-store" element={<AssyStorePage />} />
               <Route path="/inventory/sub-assy-store" element={<SubAssyStorePage />} />
               <Route path="/inventory/ledger" element={<StockLedgerPage />} />
-              <Route path="/inventory/adjustment" element={<StockAdjustmentPage />} />
 
               <Route path="/master/models" element={<ModelsPage />} />
               <Route path="/master/parts" element={<PartsPage />} />

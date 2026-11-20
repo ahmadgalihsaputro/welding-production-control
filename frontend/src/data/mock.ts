@@ -2622,8 +2622,8 @@ export const permissionMatrix = [
 /* ------------------------------------------------------------------ */
 
 export const quickActions = [
-  { id: 'qa-1', label: 'Scan Kanban', hint: 'Barcode scanner', icon: 'scan' },
+  { id: 'qa-1', label: 'Antrian Supplier', hint: 'Kanban menunggu', icon: 'scan' },
   { id: 'qa-2', label: 'Input Output', hint: 'Produksi Assy', icon: 'plus' },
   { id: 'qa-3', label: 'Store In', hint: 'Production Buffer', icon: 'store' },
-  { id: 'qa-4', label: 'Material Request', hint: 'Kanban Belanja', icon: 'request' },
+  { id: 'qa-4', label: 'Stock Overview', hint: 'Saldo & status', icon: 'request' },
 ]

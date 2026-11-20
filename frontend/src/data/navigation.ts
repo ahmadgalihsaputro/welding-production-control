@@ -5,7 +5,6 @@ import {
   Factory,
   LayoutDashboard,
   Settings2,
-  Truck,
   UsersRound,
   Warehouse,
   type LucideIcon,
@@ -50,7 +49,6 @@ const productionRoles: Role[] = [
   'leader',
   'admin',
 ]
-const materialRoles: Role[] = ['leader', 'admin']
 const inventoryRoles: Role[] = ['leader', 'admin']
 
 export const navigation: NavGroup[] = [
@@ -110,47 +108,18 @@ export const navigation: NavGroup[] = [
     ],
   },
   {
-    id: 'material',
-    label: 'Material Control',
-    icon: Truck,
-    section: 'main',
-    roles: materialRoles,
-    items: [
-      {
-        label: 'Permintaan Material',
-        path: '/material/request',
-        roles: materialRoles,
-        badge: '3',
-      },
-      { label: 'Pengambilan Supply', path: '/material/pickup', roles: materialRoles },
-      { label: 'Pengembalian Material', path: '/material/return', roles: materialRoles },
-      { label: 'Scan Pickup Assy', path: '/material/assy-pickup', roles: materialRoles },
-      {
-        label: 'External Material',
-        path: '/material/external',
-        roles: materialRoles,
-        badge: '2',
-      },
-      { label: 'Penerimaan Material', path: '/material/receiving', roles: materialRoles },
-    ],
-  },
-  {
     id: 'inventory',
     label: 'Inventory Control',
     icon: Warehouse,
     section: 'main',
     roles: inventoryRoles,
     items: [
+      { label: 'Antrian Supplier', path: '/material/supplier-queue', roles: inventoryRoles },
       { label: 'Stock Overview', path: '/inventory/overview', roles: inventoryRoles },
       { label: 'Production Buffer', path: '/inventory/buffer', roles: inventoryRoles },
       { label: 'Assy Store', path: '/inventory/assy-store', roles: inventoryRoles },
       { label: 'Sub Assy Store', path: '/inventory/sub-assy-store', roles: inventoryRoles },
       { label: 'Mutasi Stok', path: '/inventory/ledger', roles: inventoryRoles },
-      {
-        label: 'Stock Adjustment',
-        path: '/inventory/adjustment',
-        roles: ['leader', 'admin'],
-      },
     ],
   },
   {
@@ -196,7 +165,7 @@ export const navigation: NavGroup[] = [
       { label: 'Cycle Time & Capacity', path: '/master/cycle-time', roles: ['admin'] },
       { label: 'Machine', path: '/master/machines', roles: ['admin'] },
       { label: 'Packaging & Policy', path: '/master/stock-policy', roles: ['leader', 'admin'] },
-      { label: 'Inventory Location', path: '/master/locations', roles: ['admin'] },
+      { label: 'Inventory Location', path: '/master/locations', roles: ['leader', 'admin'] },
       { label: 'Shift & Working Hours', path: '/master/shifts', roles: ['admin'] },
       { label: 'Kanban Configuration', path: '/master/kanban', roles: ['admin'] },
       { label: 'Work Area', path: '/master/work-areas', roles: ['admin'] },
@@ -239,12 +208,7 @@ export const navigationEn: Record<string, string> = {
   'Antrian Admin / Alokasi': 'Admin Queue / Allocation',
   'Produksi Sub Assy': 'Sub Assy Production',
   'Hasil Produksi': 'Production Results',
-  'Material Control': 'Material Control',
-  'Permintaan Material': 'Material Request',
-  'Pengambilan Supply': 'Supply Pickup',
-  'Pengembalian Material': 'Material Return',
-  'Scan Pickup Assy': 'Assy Pickup Scan',
-  'Penerimaan Material': 'Material Receiving',
+  'Antrian Supplier': 'Supplier Queue',
   'Inventory Control': 'Inventory Control',
   'Mutasi Stok': 'Stock Ledger',
   'Master Data': 'Master Data',
@@ -261,6 +225,23 @@ export const navigationEn: Record<string, string> = {
   'Application Preferences': 'Application Preferences',
   'Barcode & Printing': 'Barcode & Printing',
   'Backup & Maintenance': 'Backup & Maintenance',
+  'Stock Overview': 'Stock Overview',
+  'Production Buffer': 'Production Buffer',
+  'Assy Store': 'Assy Store',
+  'Sub Assy Store': 'Sub Assy Store',
+  Reports: 'Reports',
+  'Production Report': 'Production Report',
+  'Inventory Report': 'Inventory Report',
+  'Material Usage': 'Material Usage',
+  'NG Report': 'NG Report',
+  'Transaction Report': 'Transaction Report',
+  Model: 'Model',
+  'Part Number': 'Part Number',
+  BOM: 'BOM',
+  'Cycle Time & Capacity': 'Cycle Time & Capacity',
+  Machine: 'Machine',
+  Settings: 'Settings',
+  Notifications: 'Notifications',
 }
 
 export const sectionLabels: Record<NavGroup['section'], string> = {

@@ -14,27 +14,30 @@ interface StockMovementInput {
   location?: string
   reference: string
   user: string
-  allowNegative?: boolean
 }
 
 export async function applyStockMovement(
   tx: Prisma.TransactionClient,
   input: StockMovementInput,
 ) {
-  const stock = await tx.stockItem.findUnique({ where: { partNumber: input.partNumber } })
-  if (!stock) throw new Error(`Stock item ${input.partNumber} tidak ditemukan.`)
-
-  const nextStore = stock.store + input.delta
-  if (nextStore < 0 && !input.allowNegative) {
+  // updateMany dengan syarat stok tersedia bersifat atomik: dua scanner tidak bisa membaca angka lama yang sama.
+  const moved = await tx.stockItem.updateMany({
+    where: {
+      partNumber: input.partNumber,
+      ...(input.delta >= 0 ? {} : { store: { gte: -input.delta } }),
+    },
+    data: { store: { increment: input.delta } },
+  })
+  if (moved.count === 0) {
+    const stock = await tx.stockItem.findUnique({ where: { partNumber: input.partNumber } })
+    if (!stock) throw new Error(`Stock item ${input.partNumber} tidak ditemukan.`)
     throw new Error(`Stok ${input.partNumber} tidak cukup (tersedia ${stock.store}).`)
   }
 
+  const stock = await tx.stockItem.findUniqueOrThrow({ where: { partNumber: input.partNumber } })
   const updated = await tx.stockItem.update({
-    where: { partNumber: stock.partNumber },
-    data: {
-      store: Math.max(nextStore, 0),
-      status: stockStatus(Math.max(nextStore, 0), stock.safetyStock, stock.maxStore),
-    },
+    where: { partNumber: input.partNumber },
+    data: { status: stockStatus(stock.store, stock.safetyStock, stock.maxStore) },
   })
 
   const ledger = await tx.ledgerEntry.create({

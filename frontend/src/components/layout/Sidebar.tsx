@@ -12,6 +12,7 @@ import {
 } from '../../data/navigation'
 import { Avatar } from '../ui/Avatar'
 import { BrandLockup } from '../brand/Logo'
+import { ConnectionIndicator } from './ConnectionIndicator'
 
 interface SidebarProps {
   collapsed: boolean
@@ -156,11 +157,7 @@ export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
       </nav>
 
       <div className="sidebar-status">
-        <span className="line-dot" />
-        <div>
-          <strong>{t('Sistem online', 'System online')}</strong>
-          <span>{t('Database terhubung', 'Database connected')}</span>
-        </div>
+        <ConnectionIndicator showLabel />
       </div>
 
       <div className="sidebar-footer">

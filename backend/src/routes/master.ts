@@ -99,9 +99,7 @@ router.post('/parts', writeRoles, async (req, res, next) => {
     const partNumber = body.partNumber.trim().toUpperCase()
     const process = body.process.trim()
     const productionType = body.type === 'Assy' || body.type === 'Sub_Assy'
-    const models = productionType
-      ? await resolvePartModels(body.models)
-      : { codes: [] as string[], error: null }
+    const models = await resolvePartModels(body.models)
     if (models.error) return res.status(400).json({ message: models.error })
 
     const existing = await prisma.productionPart.findUnique({ where: { partNumber } })
@@ -113,17 +111,6 @@ router.post('/parts', writeRoles, async (req, res, next) => {
 
     const { partNumber: _partNumber, process: _process, models: _models, cycleGroupId, ...rest } = body
     const item = await prisma.$transaction(async (tx) => {
-      const created = await tx.productionPart.create({
-        data: {
-          ...rest,
-          partNumber,
-          process: productionType ? process : body.type,
-          models: models.codes,
-          line: productionType ? body.line.trim() : 'Non Production',
-          cycleGroupId: cycleGroupId?.trim().toUpperCase() || null,
-          status: body.status ?? 'active',
-        },
-      })
       const stockData: Record<string, number> = {}
       if (body.packaging !== undefined && body.packaging !== null) {
         stockData.packaging = body.packaging
@@ -131,23 +118,32 @@ router.post('/parts', writeRoles, async (req, res, next) => {
       if (body.maxStore !== undefined && body.maxStore !== null) {
         stockData.maxStore = body.maxStore
       }
-      if (Object.keys(stockData).length > 0) {
-        await tx.stockItem.upsert({
-          where: { partNumber },
-          update: stockData,
-          create: {
-            partNumber,
-            description: partNumber,
-            category: body.type.replace('_', ' '),
-            ...stockData,
-            safetyStock: 0,
-            maxStore: body.maxStore ?? 0,
-            location: 'Box standard · ',
-            status: 'safe',
-          },
-        })
-      }
-      return created
+      // StockItem dulu: ProductionPart.partNumber FK ke StockItem.
+      await tx.stockItem.upsert({
+        where: { partNumber },
+        update: stockData,
+        create: {
+          partNumber,
+          description: partNumber,
+          category: body.type.replace('_', ' '),
+          ...stockData,
+          safetyStock: 0,
+          maxStore: body.maxStore ?? 0,
+          location: 'Box standard · ',
+          status: 'safe',
+        },
+      })
+      return tx.productionPart.create({
+        data: {
+          ...rest,
+          partNumber,
+          process: productionType ? process : body.type,
+          models: models.codes,
+          line: body.line.trim(),
+          cycleGroupId: cycleGroupId?.trim().toUpperCase() || null,
+          status: body.status ?? 'active',
+        },
+      })
     })
     res.status(201).json(item)
   } catch (error) {
@@ -168,18 +164,16 @@ router.patch('/parts/:partNumber', writeRoles, async (req: AuthenticatedRequest,
     const data: Record<string, unknown> = { ...body }
     delete data.partNumber
     if (body.process !== undefined) data.process = body.process.trim()
+    if (body.line !== undefined) data.line = body.line.trim()
     if (body.cycleGroupId !== undefined) {
       data.cycleGroupId = body.cycleGroupId?.trim().toUpperCase() || null
     }
-    const isProductionType = body.type === undefined || body.type === 'Assy' || body.type === 'Sub_Assy'
-    if (body.models !== undefined && isProductionType) {
+    if (body.models !== undefined) {
       const models = await resolvePartModels(body.models)
       if (models.error) return res.status(400).json({ message: models.error })
       data.models = models.codes
     }
     if (body.type !== undefined && body.type !== 'Assy' && body.type !== 'Sub_Assy') {
-      data.models = []
-      data.line = 'Non Production'
       data.process = body.type
     }
 
@@ -216,22 +210,20 @@ router.patch('/parts/:partNumber', writeRoles, async (req: AuthenticatedRequest,
       if (body.maxStore !== undefined && body.maxStore !== null) {
         stockData.maxStore = body.maxStore
       }
-      if (Object.keys(stockData).length > 0) {
-        await tx.stockItem.upsert({
-          where: { partNumber },
-          update: stockData,
-          create: {
-            partNumber,
-            description: partNumber,
-            category: updated.type.replace('_', ' '),
-            ...stockData,
-            safetyStock: 0,
-            maxStore: body.maxStore ?? updated.maxStore ?? 0,
-            location: 'Box standard · ',
-            status: 'safe',
-          },
-        })
-      }
+      await tx.stockItem.upsert({
+        where: { partNumber },
+        update: stockData,
+        create: {
+          partNumber,
+          description: partNumber,
+          category: updated.type.replace('_', ' '),
+          ...stockData,
+          safetyStock: 0,
+          maxStore: body.maxStore ?? updated.maxStore ?? 0,
+          location: 'Box standard · ',
+          status: 'safe',
+        },
+      })
       if (body.type !== undefined) {
         await tx.stockItem.updateMany({
           where: { partNumber },
@@ -307,8 +299,8 @@ router.delete('/parts/:partNumber', requireRole('admin'), async (req, res, next)
     const hasStock = stock > 0
     if (hasStock) {
       await prisma.$transaction([
-        prisma.stockItem.delete({ where: { partNumber } }),
         prisma.productionPart.delete({ where: { partNumber } }),
+        prisma.stockItem.delete({ where: { partNumber } }),
       ])
     } else {
       await prisma.productionPart.delete({ where: { partNumber } })
@@ -587,12 +579,11 @@ async function resolveBomComponent(rawPartNumber: string) {
     prisma.productionPart.findUnique({ where: { partNumber } }),
     prisma.stockItem.findUnique({ where: { partNumber } }),
   ])
-  if (!part && !stock) {
+  if (!stock) {
     return {
       partNumber,
       source: null as BomComponentSource | null,
-      error:
-        'Komponen belum terdaftar. Daftarkan dulu sebagai Part Number produksi atau Stock Item.',
+      error: 'Komponen belum terdaftar sebagai Stock Item.',
     }
   }
   return {
@@ -1091,9 +1082,9 @@ router.patch('/stock-policy/:partNumber', writeRoles, async (req, res, next) => 
           where: { partNumber },
           data: {
             type: partType,
-            line: partType === 'Assy' || partType === 'Sub_Assy' ? 'Robot G' : 'Non Production',
+            line: existingPart?.line ?? (partType === 'Assy' || partType === 'Sub_Assy' ? 'Robot G' : 'Non Production'),
             process: partType === 'Assy' || partType === 'Sub_Assy' ? 'UNKNOWN' : category,
-            models: [],
+            models: existingPart?.models ?? [],
           },
         })
       }

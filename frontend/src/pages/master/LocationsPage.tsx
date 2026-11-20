@@ -1,21 +1,22 @@
-import { Boxes, Gauge, PackageCheck, RefreshCw, Search, Warehouse } from 'lucide-react'
+import { Boxes, Gauge, PackageCheck, Pencil, RefreshCw, Search, Warehouse } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
+import { FormDialog } from '../../components/ui/FormDialog'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuth } from '../../contexts/AuthContext'
 import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { describeApiError } from '../../lib/api'
+import { adjustStock, listStock } from '../../lib/inventoryApi'
 import {
   DEFAULT_PRODUCTION_CAPACITY_PER_HOUR,
   getProductionCapacityPerHour,
   listParts,
-  listStockPolicy,
   updateProductionCapacityPerHour,
   type ProductionPartRecord,
   type StockPolicyRecord,
@@ -39,6 +40,9 @@ export function LocationsPage() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState<StockPolicyRecord | null>(null)
+  const [newStore, setNewStore] = useState('')
+  const [reason, setReason] = useState('Koreksi stok manual')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -47,7 +51,7 @@ export function LocationsPage() {
     setError('')
     try {
       const [nextStocks, nextParts, capacity] = await Promise.all([
-        listStockPolicy(),
+        listStock(),
         listParts(),
         getProductionCapacityPerHour(),
       ])
@@ -128,6 +132,57 @@ export function LocationsPage() {
     }
   }
 
+  const startEdit = (stock: StockPolicyRecord) => {
+    setEditing(stock)
+    setNewStore(String(stock.store))
+    setReason('Koreksi stok manual')
+    setError('')
+    setNotice('')
+  }
+
+  const saveStock = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editing) return
+    const nextStore = Number(newStore)
+    if (!Number.isInteger(nextStore) || nextStore < 0) {
+      setError('Stok harus berupa bilangan bulat 0 atau lebih.')
+      return
+    }
+    if (nextStore === editing.store) {
+      setError('Tidak ada perubahan stok.')
+      return
+    }
+    if (!reason.trim()) {
+      setError('Alasan perubahan stok wajib diisi.')
+      return
+    }
+    const delta = nextStore - editing.store
+    if (!(await confirm({
+      title: 'Simpan perubahan stok?',
+      message: `Ubah stok ${editing.partNumber} dari ${formatNumber(editing.store)} pcs menjadi ${formatNumber(nextStore)} pcs (${delta > 0 ? '+' : ''}${formatNumber(delta)} pcs). Perubahan tercatat di Mutasi Stok.`,
+      confirmLabel: 'Simpan stok',
+    }))) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      await adjustStock({
+        partNumber: editing.partNumber,
+        newStore: nextStore,
+        reason: reason.trim(),
+        location: editing.location,
+      })
+      setNotice(`Stok ${editing.partNumber} disimpan: ${formatNumber(nextStore)} pcs.`)
+      setEditing(null)
+      await loadData()
+    } catch (saveError) {
+      setError(describeApiError(saveError, 'Stok gagal disimpan.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const columns: Column<InventoryStockRow>[] = [
     {
       key: 'part',
@@ -173,6 +228,20 @@ export function LocationsPage() {
     },
     { key: 'location', header: 'Lokasi', render: (stock) => stock.location },
     { key: 'status', header: 'Status', render: (stock) => <StatusBadge status={stock.status} /> },
+    {
+      key: 'action',
+      header: 'Aksi',
+      render: (stock) => (
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<Pencil size={14} />}
+          onClick={() => startEdit(stock)}
+        >
+          Edit stok
+        </Button>
+      ),
+    },
   ]
 
   return (
@@ -189,7 +258,7 @@ export function LocationsPage() {
         }
       />
 
-      {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
+      {error && !editing && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
       {notice && <Callout tone="success">{notice}</Callout>}
 
       <div className="kpi-grid">
@@ -228,6 +297,45 @@ export function LocationsPage() {
           )}
         </form>
       </section>
+
+      <FormDialog
+        open={Boolean(editing)}
+        onClose={() => setEditing(null)}
+        titleId="edit-stock-form-title"
+        title={`Edit stok · ${editing?.partNumber ?? ''}`}
+        subtitle={editing ? `${editing.description} · Store saat ini ${formatNumber(editing.store)} pcs` : undefined}
+        badge={editing ? <Badge tone="sky">{editing.category}</Badge> : undefined}
+      >
+        {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
+        <form className="form-grid" onSubmit={(event) => void saveStock(event)}>
+          <Field label="Store baru (pcs)" htmlFor="edit-store">
+            <input
+              id="edit-store"
+              className="input"
+              type="number"
+              min="0"
+              step="1"
+              value={newStore}
+              onChange={(event) => setNewStore(event.target.value)}
+              autoFocus
+              required
+            />
+          </Field>
+          <Field label="Alasan perubahan" htmlFor="edit-reason">
+            <input
+              id="edit-reason"
+              className="input"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              required
+            />
+          </Field>
+          <div className="form-actions" style={{ alignSelf: 'end' }}>
+            <Button type="button" variant="secondary" onClick={() => setEditing(null)}>Batal</Button>
+            <Button type="submit" variant="primary" loading={saving}>Simpan stok</Button>
+          </div>
+        </form>
+      </FormDialog>
 
       <section className="card">
         <div className="section-head">

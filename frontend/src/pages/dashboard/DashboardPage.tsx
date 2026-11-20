@@ -46,11 +46,18 @@ const quickIcons = {
   request: ClipboardList,
 }
 
+const quickActionEn: Record<string, string> = {
+  'qa-1': 'Supplier Queue',
+  'qa-2': 'Input Output',
+  'qa-3': 'Store In',
+  'qa-4': 'Stock Overview',
+}
+
 const quickRoutes: Record<string, string> = {
-  'qa-1': '/material/pickup',
+  'qa-1': '/material/supplier-queue',
   'qa-2': '/production/assy',
   'qa-3': '/inventory/buffer',
-  'qa-4': '/material/request',
+  'qa-4': '/inventory/overview',
 }
 
 const alertIcons = {
@@ -243,7 +250,7 @@ export function DashboardPage() {
                     }
                   >
                     <Icon size={13} />
-                    {action.label}
+                    {t(action.label, quickActionEn[action.id] ?? action.label)}
                   </button>
                 )
               })}

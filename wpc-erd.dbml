@@ -1,0 +1,493 @@
+// WPC — Welding Production Control
+// ERD lengkap (26 tabel) sesuai backend/prisma/schema.prisma + migration terpakai.
+//
+// Cara pakai:
+// 1. Buka https://dbdiagram.io/d (atau https://dbdiagram.io/home → New Diagram)
+// 2. Pilih tab "DBML Editor", hapus isi contoh, paste seluruh isi file ini.
+// 3. Diagram langsung tergambar. Bisa di-export PNG/PDF/SQL lewat menu Export.
+//
+// Legenda:
+//   >  = many-to-one FK nyata (ada constraint di PostgreSQL).
+//   Semua relasi antar tabel di file ini sudah memiliki FK di database.
+//   Field seperti models[], steps, requester, operator, location masih berupa teks
+//   dan divalidasi di application layer (bukan FK).
+
+Enum Role {
+  operator_assy
+  operator_sub_assy
+  operator_both
+  leader
+  admin
+  management
+}
+
+Enum QueueType {
+  Assy
+  Sub_Assy
+}
+
+Enum PartCategory {
+  Assy
+  Sub_Assy
+  Press_Part
+  Child_Part
+  Bolt
+  Nut
+}
+
+Enum QueueStatus {
+  waiting
+  running
+  complete
+}
+
+Enum RequestStatus {
+  pending
+  allocated
+}
+
+Enum ShiftNumber {
+  ONE
+  TWO
+}
+
+Enum StockStatus {
+  safe
+  low
+  full
+  empty
+}
+
+// ---------- User & akses ----------
+
+Table "User" {
+  id              varchar [pk, not null]
+  employeeId      varchar [not null, unique]
+  username        varchar [not null, unique]
+  name            varchar [not null]
+  email           varchar
+  phone           varchar
+  password        varchar [not null]
+  role            Role [not null]
+  roleLabel       varchar [not null]
+  area            varchar [not null]
+  line            varchar [not null]
+  status          varchar [not null, default: 'active']
+  lastLogin       timestamp
+  initials        varchar [not null]
+  shiftMode       varchar [not null, default: 'non_shift']
+  shiftBase       int [not null, default: 1]
+  shiftAnchorDate date
+  preferences     jsonb
+  createdAt       timestamp [not null, default: `now()`]
+  updatedAt       timestamp [not null, default: `now()`]
+
+  Note: 'Akun login. role menentukan hak: admin hanya view di antrean produksi; operator Assy/Sub Assy + leader boleh print kanban.'
+}
+
+Table "WorkArea" {
+  id        varchar [pk, not null]
+  label     varchar [not null]
+  line      varchar [not null]
+  type      varchar [not null]
+  process   varchar [not null]
+
+  indexes {
+    (line, type, process) [unique]
+  }
+}
+
+Table "UserWorkArea" {
+  userId     varchar [pk, not null]
+  workAreaId varchar [pk, not null]
+
+  Note: 'Junction user ↔ area kerja (many-to-many).'
+}
+
+Table "UserPartSkill" {
+  userId     varchar [pk, not null]
+  partNumber varchar [pk, not null]
+
+  indexes {
+    partNumber
+  }
+
+  Note: 'Keahlian operator per part number.'
+}
+
+// ---------- Master data ----------
+
+Table "ProductionPart" {
+  partNumber    varchar [pk, not null]
+  line          varchar [not null]
+  type          PartCategory [not null]
+  process       varchar [not null]
+  models        varchar[] [not null]
+  packaging     int
+  maxStore      int
+  cycleTime     float
+  cycleGroupId  varchar
+  placeholder   boolean [not null, default: false]
+  status        varchar [not null, default: 'active']
+  createdAt     timestamp [not null, default: `now()`]
+  updatedAt     timestamp [not null, default: `now()`]
+
+  Note: 'Master part produksi (Assy, Sub Assy, Press Part, Child Part, Bolt, Nut). Menjadi pusat relasi antrean & hasil produksi.'
+}
+
+Table "ProductionModel" {
+  id        varchar [pk, not null]
+  code      varchar [not null, unique]
+  name      varchar [not null]
+  status    varchar [not null, default: 'active']
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null, default: `now()`]
+}
+
+Table "Machine" {
+  id        varchar [pk, not null]
+  code      varchar [not null, unique]
+  name      varchar [not null]
+  line      varchar [not null]
+  processes varchar[] [not null]
+  status    varchar [not null, default: 'active']
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null, default: `now()`]
+}
+
+Table "InventoryLocation" {
+  id        varchar [pk, not null]
+  code      varchar [not null, unique]
+  name      varchar [not null]
+  type      varchar [not null]
+  line      varchar [not null]
+  capacity  int [not null, default: 0]
+  status    varchar [not null, default: 'active']
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null, default: `now()`]
+
+  Note: 'Master Data → Inventory Location. Satu-satunya tempat edit stok manual (Admin + Leader).'
+}
+
+Table "StockItem" {
+  id          varchar [pk, not null]
+  partNumber  varchar [not null, unique]
+  description varchar [not null]
+  category    varchar [not null]
+  store       int [not null, default: 0]
+  buffer      int [not null, default: 0]
+  safetyStock int [not null, default: 0]
+  maxStore    int [not null, default: 0]
+  packaging   int [not null, default: 1]
+  location    varchar [not null]
+  status      StockStatus [not null, default: 'safe']
+  createdAt   timestamp [not null, default: `now()`]
+  updatedAt   timestamp [not null, default: `now()`]
+
+  Note: 'Satu baris stok per part number. Sumber data untuk Stock Overview, Assy Store, Sub Assy Store, Mutasi Stok, Inventory Report.'
+}
+
+Table "BomComponent" {
+  id                  varchar [pk, not null]
+  parentPartNumber    varchar [not null]
+  componentPartNumber varchar [not null]
+  quantityPerAssy     int [not null]
+  createdAt           timestamp [not null, default: `now()`]
+  updatedAt           timestamp [not null, default: `now()`]
+
+  indexes {
+    (parentPartNumber, componentPartNumber) [unique]
+  }
+}
+
+Table "Routing" {
+  id            varchar [pk, not null]
+  partNumber    varchar [not null]
+  model         varchar [not null]
+  version       varchar [not null, default: '1.0']
+  effectiveDate varchar [not null]
+  steps         jsonb [not null]
+  status        varchar [not null, default: 'active']
+  createdAt     timestamp [not null, default: `now()`]
+  updatedAt     timestamp [not null, default: `now()`]
+
+  indexes {
+    (partNumber, model, version) [unique]
+  }
+}
+
+Table "ShiftConfig" {
+  id                 varchar [pk, not null]
+  name               varchar [not null, unique]
+  start              varchar [not null]
+  end                varchar [not null]
+  breakStart         varchar [not null]
+  breakEnd           varchar [not null]
+  workHours          float [not null, default: 0]
+  maxOvertimeMinutes int [not null, default: 0]
+  active             boolean [not null, default: true]
+  createdAt          timestamp [not null, default: `now()`]
+  updatedAt          timestamp [not null, default: `now()`]
+}
+
+// ---------- Kanban & device ----------
+
+Table "KanbanConfig" {
+  id        varchar [pk, not null]
+  type      varchar [not null, unique]
+  prefix    varchar [not null]
+  format    varchar [not null]
+  fields    varchar[] [not null]
+  template  varchar [not null]
+  active    boolean [not null, default: true]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null, default: `now()`]
+}
+
+Table "KanbanPartConfig" {
+  id            varchar [pk, not null]
+  partNumber    varchar [not null]
+  model         varchar [not null]
+  quantity      int [not null]
+  storeLocation varchar [not null]
+  kanbanType    varchar [not null]
+  nextProcess   varchar [not null]
+  printerId     varchar
+  createdAt     timestamp [not null, default: `now()`]
+  updatedAt     timestamp [not null, default: `now()`]
+
+  indexes {
+    (partNumber, model) [unique]
+    partNumber
+    printerId
+  }
+
+  Note: 'Konfigurasi cetak kanban per part+model; printerId mengarah ke Device bertype Printer.'
+}
+
+Table "Device" {
+  id             varchar [pk, not null]
+  name           varchar [not null]
+  type           varchar [not null]
+  model          varchar
+  location       varchar [not null]
+  assignedTo     varchar
+  status         varchar [not null, default: 'offline']
+  lastSeen       timestamp
+  connectionType varchar
+  pairingCode    varchar [unique]
+  isDefault      boolean [not null, default: false]
+  createdAt      timestamp [not null, default: `now()`]
+  updatedAt      timestamp [not null, default: `now()`]
+
+  Note: 'Tablet, PC, Scanner, Printer. connectionType: wireless | bluetooth | wired. pairingCode dipakai sebagai prefix scan tanpa login (SCN-XXXXXXXX|barcode).'
+}
+
+// ---------- Antrean produksi ----------
+
+Table "ScheduleItem" {
+  id        varchar [pk, not null]
+  partNumber varchar [not null]
+  model     varchar [not null]
+  target    int [not null]
+  actual    int [not null, default: 0]
+  status    varchar [not null, default: 'waiting']
+  shift     int [not null]
+  dueTime   varchar [not null]
+  line      varchar [not null]
+  createdAt timestamp [not null, default: `now()`]
+  updatedAt timestamp [not null, default: `now()`]
+}
+
+Table "ProductionRequest" {
+  id             varchar [pk, not null]
+  code           varchar [not null, unique]
+  partNumber     varchar [not null]
+  model          varchar [not null]
+  type           QueueType [not null]
+  line           varchar [not null]
+  process        varchar
+  qty            int [not null]
+  sourceShift    int
+  barcodePayload varchar
+  scannedAt      timestamp [not null, default: `now()`]
+  status         RequestStatus [not null, default: 'pending']
+  targetShift    int
+  createdAt      timestamp [not null, default: `now()`]
+  updatedAt      timestamp [not null, default: `now()`]
+
+  Note: 'Permintaan hasil scan kanban Assy/Sub Assy. Dialokasikan ke shift → QueueItem.'
+}
+
+Table "QueueItem" {
+  id             varchar [pk, not null]
+  no             int [not null]
+  partNumber     varchar [not null]
+  model          varchar [not null]
+  type           QueueType [not null]
+  line           varchar
+  process        varchar
+  sourceShift    int
+  targetShift    int
+  kanban         varchar [not null]
+  barcodePayload varchar
+  taken          int [not null]
+  printedQty     int [not null, default: 0]
+  printedKanbans int [not null, default: 0]
+  stock          int [not null, default: 0]
+  time           varchar [not null]
+  priority       varchar [not null, default: 'normal']
+  status         QueueStatus [not null, default: 'waiting']
+  operatorId     varchar
+  createdAt      timestamp [not null, default: `now()`]
+  updatedAt      timestamp [not null, default: `now()`]
+
+  Note: 'Antrean Assy/Sub Assy. Print kanban = stock in ke Store (hanya Operator Assy/Sub Assy & Leader).'
+}
+
+Table "CompletedBox" {
+  id               varchar [pk, not null]
+  partNumber       varchar [not null]
+  type             QueueType [not null]
+  line             varchar
+  qty              int [not null]
+  kanban           varchar [not null]
+  completedAt      timestamp [not null, default: `now()`]
+  completedAtEpoch bigint
+  date             varchar
+  operator         varchar [not null]
+  shift            int
+  operatorUserId   varchar
+  createdAt        timestamp [not null, default: `now()`]
+}
+
+Table "ProductionShiftRecord" {
+  id             varchar [pk, not null]
+  date           varchar [not null]
+  partNumber     varchar [not null]
+  type           QueueType [not null]
+  process        varchar [not null, default: '']
+  shift          int [not null]
+  ok             int [not null, default: 0]
+  ng             int [not null, default: 0]
+  operator       varchar [not null]
+  time           varchar [not null]
+  line           varchar [not null]
+  updatedAtEpoch bigint
+  operatorUserId varchar
+  createdAt      timestamp [not null, default: `now()`]
+  updatedAt      timestamp [not null, default: `now()`]
+
+  indexes {
+    (date, partNumber, type, shift, line, process) [unique]
+  }
+}
+
+Table "NgShiftRecord" {
+  id             varchar [pk, not null]
+  date           varchar [not null]
+  partNumber     varchar [not null]
+  type           QueueType [not null]
+  shift          int [not null]
+  ng             int [not null, default: 0]
+  operator       varchar [not null]
+  time           varchar [not null]
+  updatedAtEpoch bigint
+  line           varchar [not null]
+  createdAt      timestamp [not null, default: `now()`]
+  updatedAt      timestamp [not null, default: `now()`]
+}
+
+// ---------- Supplier & inventory ----------
+
+Table "MaterialRequest" {
+  id          varchar [pk, not null]
+  code        varchar [not null, unique]
+  kind        varchar [not null, default: 'request']
+  partNumber  varchar [not null]
+  boxes       int [not null]
+  pcsPerBox   int [not null]
+  status      varchar [not null, default: 'waiting']
+  destination varchar [not null]
+  note        varchar
+  createdAt   timestamp [not null, default: `now()`]
+  requester   varchar [not null]
+  updatedAt   timestamp [not null, default: `now()`]
+
+  Note: 'Antrian Supplier. Satu baris = satu scan kanban (duplikat PN tetap jadi baris/button terpisah). requester = nama scanner. Status received → stock in via LedgerEntry.'
+}
+
+Table "BufferItem" {
+  id             varchar [pk, not null]
+  partNumber     varchar [not null]
+  qty            int [not null]
+  kanban         varchar [not null]
+  completedAt    timestamp [not null, default: `now()`]
+  operator       varchar [not null]
+  waitingMinutes int [not null, default: 0]
+  status         varchar [not null, default: 'pending']
+  createdAt      timestamp [not null, default: `now()`]
+  updatedAt      timestamp [not null, default: `now()`]
+}
+
+Table "LedgerEntry" {
+  id         varchar [pk, not null]
+  time       timestamp [not null, default: `now()`]
+  partNumber varchar [not null]
+  type       varchar [not null]
+  qty        int [not null]
+  balance    int [not null]
+  location   varchar [not null]
+  reference  varchar [not null]
+  user       varchar [not null]
+  createdAt  timestamp [not null, default: `now()`]
+
+  Note: 'Mutasi stok. Setiap perubahan Store/buffer lewat applyStockMovement mencatat baris di sini (termasuk edit manual & terima MaterialRequest).'
+}
+
+// ---------- Sistem ----------
+
+Table "AppSetting" {
+  key       varchar [pk, not null]
+  value     jsonb [not null]
+  updatedAt timestamp [not null, default: `now()`]
+}
+
+Table "AuditLog" {
+  id        varchar [pk, not null]
+  time      timestamp [not null, default: `now()`]
+  title     varchar [not null]
+  detail    varchar [not null]
+  type      varchar [not null]
+  line      varchar
+  process   varchar
+  createdAt timestamp [not null, default: `now()`]
+}
+
+// ---------- Foreign key nyata (sesuai migration PostgreSQL) ----------
+
+Ref: "UserWorkArea"."userId" > "User"."id" [delete: cascade]
+Ref: "UserWorkArea"."workAreaId" > "WorkArea"."id" [delete: cascade]
+Ref: "UserPartSkill"."userId" > "User"."id" [delete: cascade]
+Ref: "UserPartSkill"."partNumber" > "ProductionPart"."partNumber" [delete: cascade]
+
+Ref: "ProductionRequest"."partNumber" > "ProductionPart"."partNumber" [delete: restrict]
+Ref: "QueueItem"."partNumber" > "ProductionPart"."partNumber" [delete: restrict]
+Ref: "QueueItem"."operatorId" > "User"."id" [delete: set null]
+Ref: "CompletedBox"."partNumber" > "ProductionPart"."partNumber" [delete: restrict]
+Ref: "CompletedBox"."operatorUserId" > "User"."id" [delete: set null]
+Ref: "ProductionShiftRecord"."partNumber" > "ProductionPart"."partNumber" [delete: restrict]
+Ref: "ProductionShiftRecord"."operatorUserId" > "User"."id" [delete: set null]
+Ref: "NgShiftRecord"."partNumber" > "ProductionPart"."partNumber" [delete: restrict]
+
+Ref: "KanbanPartConfig"."partNumber" > "ProductionPart"."partNumber" [delete: cascade]
+Ref: "KanbanPartConfig"."printerId" > "Device"."id" [delete: set null]
+
+Ref: "ProductionPart"."partNumber" > "StockItem"."partNumber" [delete: restrict]
+Ref: "BomComponent"."parentPartNumber" > "ProductionPart"."partNumber" [delete: restrict]
+Ref: "BomComponent"."componentPartNumber" > "StockItem"."partNumber" [delete: restrict]
+Ref: "ScheduleItem"."partNumber" > "ProductionPart"."partNumber" [delete: restrict]
+Ref: "Routing"."partNumber" > "ProductionPart"."partNumber" [delete: restrict]
+Ref: "MaterialRequest"."partNumber" > "StockItem"."partNumber" [delete: restrict]
+Ref: "BufferItem"."partNumber" > "StockItem"."partNumber" [delete: restrict]
+Ref: "LedgerEntry"."partNumber" > "StockItem"."partNumber" [delete: restrict]

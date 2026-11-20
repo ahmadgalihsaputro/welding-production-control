@@ -1,18 +1,8 @@
-import {
-  Boxes,
-  Download,
-  PackageMinus,
-  PackageSearch,
-  SlidersHorizontal,
-  TriangleAlert,
-  Warehouse,
-} from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Boxes, PackageMinus, PackageSearch, TriangleAlert, Warehouse } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart } from '../../components/charts/BarChart'
 import { DonutChart } from '../../components/charts/DonutChart'
 import { Badge } from '../../components/ui/Badge'
-import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { PageHeader } from '../../components/ui/PageHeader'
@@ -23,15 +13,14 @@ import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Tabs } from '../../components/ui/Tabs'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePreferences } from '../../contexts/PreferencesContext'
-import { stockItems } from '../../data/mock'
-import { getProductionPart } from '../../data/productionLines'
-import type { StockItem } from '../../types'
+import { describeApiError } from '../../lib/api'
+import { listStock, type StockItemRecord } from '../../lib/inventoryApi'
+import { listParts } from '../../lib/masterApi'
 import { formatNumber } from '../../lib/utils'
 
 export function StockOverviewPage() {
-  const navigate = useNavigate()
   const { activeLine } = useAuth()
-  const { t } = usePreferences()
+  const { t, formatTime } = usePreferences()
   const statusTabs = [
     { value: 'all', label: t('Semua', 'All') },
     { value: 'safe', label: t('Aman', 'Safe') },
@@ -41,16 +30,40 @@ export function StockOverviewPage() {
   const [status, setStatus] = useState('all')
   const [category, setCategory] = useState('all')
   const [search, setSearch] = useState('')
+  const [items, setItems] = useState<StockItemRecord[]>([])
+  const [lineByPart, setLineByPart] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [nextItems, parts] = await Promise.all([listStock(), listParts()])
+      setItems(nextItems)
+      setLineByPart(Object.fromEntries(parts.map((part) => [part.partNumber, part.line])))
+    } catch (loadError) {
+      setError(describeApiError(loadError, 'Data stok gagal dimuat.'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
 
   const lineStockItems = useMemo(
     () =>
-      stockItems.filter((item) => {
-        const line =
-          getProductionPart(item.partNumber)?.line ??
-          (item.location.startsWith('R-H') ? 'Robot H' : 'Robot G')
+      items.filter((item) => {
+        const line = lineByPart[item.partNumber] ?? item.location
         return activeLine === 'all' || line === activeLine
       }),
-    [activeLine],
+    [activeLine, items, lineByPart],
+  )
+  const lastUpdated = useMemo(
+    () => lineStockItems.map((item) => item.updatedAt).filter(Boolean).sort().at(-1),
+    [lineStockItems],
   )
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase()
@@ -76,7 +89,7 @@ export function StockOverviewPage() {
     { label: 'Full store', value: fullStore, color: '#38bdf8' },
   ]
 
-  const columns: Column<StockItem>[] = [
+  const columns: Column<StockItemRecord>[] = [
     {
       key: 'part',
       header: 'Part Number',
@@ -109,7 +122,7 @@ export function StockOverviewPage() {
       key: 'level',
       header: 'Level',
       render: (item) => {
-        const percent = ((item.store + item.buffer) / item.maxStore) * 100
+        const percent = item.maxStore > 0 ? ((item.store + item.buffer) / item.maxStore) * 100 : 0
         return (
           <div className="stock-level">
             <div className="stock-level__top">
@@ -153,21 +166,9 @@ export function StockOverviewPage() {
             </span>
           </>
         }
-        actions={
-          <>
-            <Button variant="secondary" leftIcon={<Download size={15} />}>
-              {t('Export stok', 'Export stock')}
-            </Button>
-            <Button
-              variant="primary"
-              leftIcon={<SlidersHorizontal size={15} />}
-              onClick={() => navigate('/inventory/adjustment')}
-            >
-              Adjustment
-            </Button>
-          </>
-        }
       />
+
+      {error && <Callout tone="danger" title="Gagal memuat">{error}</Callout>}
 
       <div className="kpi-grid">
         <StatCard
@@ -271,8 +272,10 @@ export function StockOverviewPage() {
                 <option value="Assy">Assy</option>
                 <option value="Sub Assy">Sub Assy</option>
                 <option value="Press Part">Press Part</option>
-                <option value="Bolt/Nut">Bolt/Nut</option>
                 <option value="Child Part">Child Part</option>
+                <option value="Bolt">Bolt</option>
+                <option value="Nut">Nut</option>
+                <option value="Bolt/Nut">Bolt/Nut</option>
               </select>
             </div>
           </div>
@@ -289,6 +292,7 @@ export function StockOverviewPage() {
           rows={rows}
           rowKey={(row) => row.id}
           minWidth={920}
+          emptyMessage={loading ? 'Memuat data stok…' : 'Belum ada data stok yang sesuai.'}
           footer={
             <>
               <span>
@@ -296,7 +300,9 @@ export function StockOverviewPage() {
               </span>
               <span>
                 <PackageSearch size={12} style={{ display: 'inline', marginRight: 4 }} />
-                {t('Stok update 09:40', 'Stock updated 09:40')}
+                {lastUpdated
+                  ? t(`Stok update ${formatTime(lastUpdated)}`, `Stock updated ${formatTime(lastUpdated)}`)
+                  : t('Stok belum tersedia', 'No stock data')}
               </span>
             </>
           }

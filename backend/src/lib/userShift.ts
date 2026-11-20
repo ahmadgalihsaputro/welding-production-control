@@ -1,6 +1,6 @@
 type ShiftNumber = 1 | 2
 
-function jakartaDateKey(date: Date): string {
+export function jakartaDateKey(date: Date): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jakarta',
     year: 'numeric',

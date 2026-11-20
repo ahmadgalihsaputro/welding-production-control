@@ -1,5 +1,5 @@
-import { Boxes, PackageSearch, Plus, RefreshCw, Tag } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Boxes, PackageSearch, Plus, RefreshCw, Tag, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
@@ -89,6 +89,7 @@ export function PartsPage() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [lineFilter, setLineFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const dialogRef = useRef<HTMLDialogElement>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -113,6 +114,13 @@ export function PartsPage() {
     void loadData()
   }, [loadData])
 
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (showForm && !dialog.open) dialog.showModal()
+    if (!showForm && dialog.open) dialog.close()
+  }, [showForm])
+
   const stockByPart = useMemo(
     () => new Map(stockItems.map((item) => [item.partNumber, item])),
     [stockItems],
@@ -120,11 +128,7 @@ export function PartsPage() {
 
   const lineOptions = useMemo(
     () =>
-      Array.from(new Set([
-        'Robot G',
-        'Robot H',
-        ...parts.filter((part) => isProductionType(part.type)).map((part) => part.line),
-      ])).sort(),
+      Array.from(new Set(['Robot G', 'Robot H', ...parts.map((part) => part.line)])).sort(),
     [parts],
   )
 
@@ -138,6 +142,7 @@ export function PartsPage() {
         (statusFilter === 'all' || part.status === statusFilter) &&
         (!needle ||
           part.partNumber.toLowerCase().includes(needle) ||
+          part.line.toLowerCase().includes(needle) ||
           part.process.toLowerCase().includes(needle) ||
           (stock?.description ?? '').toLowerCase().includes(needle))
       )
@@ -191,15 +196,15 @@ export function PartsPage() {
       setError('Part number wajib diisi.')
       return
     }
-    if (isProductionType(form.type) && !line) {
-      setError('Line wajib diisi.')
+    if (!line) {
+      setError(isProductionType(form.type) ? 'Line wajib diisi.' : 'Nama supplier wajib diisi.')
       return
     }
     if (isProductionType(form.type) && !process) {
       setError('Process wajib diisi.')
       return
     }
-    if (isProductionType(form.type) && form.models.length === 0) {
+    if (form.models.length === 0) {
       setError('Pilih minimal satu model untuk part ini.')
       return
     }
@@ -236,10 +241,10 @@ export function PartsPage() {
     try {
       if (form.editingPartNumber) {
         await updatePart(form.editingPartNumber, {
-          line: isProductionType(form.type) ? line : 'Non Production',
+          line,
           type: form.type,
           process: isProductionType(form.type) ? process : form.type.replace('_', ' '),
-          models: isProductionType(form.type) ? form.models : [],
+          models: form.models,
           packaging,
           maxStore,
           status: form.status,
@@ -248,10 +253,10 @@ export function PartsPage() {
       } else {
         await createPart({
           partNumber,
-          line: isProductionType(form.type) ? line : 'Non Production',
+          line,
           type: form.type,
           process: isProductionType(form.type) ? process : form.type.replace('_', ' '),
-          models: isProductionType(form.type) ? form.models : [],
+          models: form.models,
           packaging,
           maxStore,
           status: form.status,
@@ -319,6 +324,7 @@ export function PartsPage() {
     {
       key: 'part',
       header: 'Part Number',
+      width: '190px',
       render: (part) => {
         const stock = stockByPart.get(part.partNumber)
         return (
@@ -334,25 +340,31 @@ export function PartsPage() {
     {
       key: 'type',
       header: 'Tipe',
+      width: '110px',
       render: (part) => (
         <Badge tone={part.type === 'Assy' ? 'sky' : 'orange'}>{typeLabel(part.type)}</Badge>
       ),
     },
     {
       key: 'line',
-      header: 'Line / Proses',
+      header: 'Line / Supplier',
+      width: '165px',
       render: (part) => (
         <div className="cell-stack">
           <span className="cell-main">{part.line}</span>
-          <span className="cell-sub">{part.process}</span>
+          <span className="cell-sub">
+            {isProductionType(part.type) ? part.process : `Supplier · ${typeLabel(part.type)}`}
+          </span>
         </div>
       ),
     },
     {
       key: 'models',
       header: 'Model',
+      width: '130px',
       render: (part) => (
         <div className="row row--wrap" style={{ gap: 4 }}>
+          {part.models.length === 0 && <span className="muted small">—</span>}
           {part.models.map((model) => (
             <Badge key={model} tone="sky">
               {model}
@@ -365,6 +377,8 @@ export function PartsPage() {
       key: 'packaging',
       header: 'Isi standar',
       align: 'right',
+      width: '135px',
+      className: 'num',
       render: (part) => {
         const stock = stockByPart.get(part.partNumber)
         const packaging = part.packaging ?? stock?.packaging
@@ -378,11 +392,18 @@ export function PartsPage() {
         )
       },
     },
-    { key: 'status', header: 'Status', render: (part) => <StatusBadge status={part.status} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      width: '100px',
+      render: (part) => <StatusBadge status={part.status} />,
+    },
     {
       key: 'action',
       header: '',
       align: 'right',
+      width: '210px',
+      className: 'actions-cell',
       render: (part) => (
         <div className="table-actions">
           <Button size="sm" variant="ghost" onClick={() => openEditForm(part)}>
@@ -418,7 +439,7 @@ export function PartsPage() {
       <PageHeader
         eyebrow="Master Data"
         title="Part Number"
-        subtitle="Mapping part produksi ke line, proses, dan model. Data tersimpan di database dan menjadi dasar routing serta transaksi produksi."
+        subtitle="Mapping part ke line / nama supplier, proses, dan model. Data tersimpan di database dan menjadi dasar routing serta transaksi produksi."
         meta={
           <>
             <span className="page-meta__item">
@@ -491,21 +512,32 @@ export function PartsPage() {
         />
       </div>
 
-      {showForm && (
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">
-                {form.editingPartNumber ? 'Ubah mapping part' : 'Part baru'}
-              </h2>
-              <p className="section-sub">
-                {form.editingPartNumber
-                  ? 'Part number tetap; line, proses, model, isi standar wadah, dan status dapat diperbarui.'
-                  : 'Part number dibuat sekali dan tidak dapat diubah setelah tersimpan.'}
-              </p>
-            </div>
-            <Badge tone="success">Terhubung database</Badge>
+      <dialog
+        ref={dialogRef}
+        className="part-dialog glass glass--strong"
+        onCancel={closeForm}
+        aria-labelledby="part-form-title"
+      >
+        <div className="section-head">
+          <div>
+            <h2 className="section-title" id="part-form-title">
+              {form.editingPartNumber ? 'Ubah mapping part' : 'Part baru'}
+            </h2>
+            <p className="section-sub">
+              {form.editingPartNumber
+                ? 'Part number tetap; line, proses, model, isi standar wadah, dan status dapat diperbarui.'
+                : 'Part number dibuat sekali dan tidak dapat diubah setelah tersimpan.'}
+            </p>
           </div>
+          <div className="row" style={{ gap: 8 }}>
+            <Badge tone="success">Terhubung database</Badge>
+            <Button variant="ghost" size="sm" onClick={closeForm} aria-label="Tutup">
+              <X size={16} />
+            </Button>
+          </div>
+        </div>
+
+        {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
 
           {models.length === 0 && (
             <Callout tone="warning">
@@ -528,6 +560,7 @@ export function PartsPage() {
                 }
                 placeholder="Contoh: 5220AU50"
                 disabled={Boolean(form.editingPartNumber)}
+                autoFocus={!form.editingPartNumber}
                 required
               />
             </Field>
@@ -535,13 +568,21 @@ export function PartsPage() {
               <select
                 id="part-type"
                 className="select"
+                autoFocus={Boolean(form.editingPartNumber)}
                 value={form.type}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const nextType = event.target.value as PartType
                   setForm((current) => ({
                     ...current,
-                    type: event.target.value as PartType,
+                    type: nextType,
+                    line:
+                      isProductionType(nextType) === isProductionType(current.type)
+                        ? current.line
+                        : isProductionType(nextType)
+                          ? 'Robot G'
+                          : '',
                   }))
-                }
+                }}
               >
                 <option value="Assy">Assy</option>
                 <option value="Sub_Assy">Sub Assy</option>
@@ -551,10 +592,10 @@ export function PartsPage() {
                 <option value="Nut">Nut</option>
               </select>
             </Field>
-            {isProductionType(form.type) && <Field
-              label="Robot / line"
+            <Field
+              label={isProductionType(form.type) ? 'Robot / line' : 'Nama supplier'}
               htmlFor="part-line"
-              hint="Pilih dari daftar atau ketik line baru."
+              hint="Pilih dari daftar atau ketik baru."
             >
               <input
                 id="part-line"
@@ -564,14 +605,15 @@ export function PartsPage() {
                 onChange={(event) =>
                   setForm((current) => ({ ...current, line: event.target.value }))
                 }
-                placeholder="Robot G"
+                placeholder={isProductionType(form.type) ? 'Robot G' : 'Contoh: PT Sinar Welding'}
+                required
               />
               <datalist id="part-line-options">
                 {lineOptions.map((lineOption) => (
                   <option key={lineOption} value={lineOption} />
                 ))}
               </datalist>
-            </Field>}
+            </Field>
             {isProductionType(form.type) && <Field label="Line proses" htmlFor="part-process" hint="Contoh: RB.G, RB.H, SS.H.">
               <input
                 id="part-process"
@@ -637,9 +679,9 @@ export function PartsPage() {
               </select>
             </Field>
 
-            {isProductionType(form.type) && <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <div className="field span-2" role="group" aria-labelledby="part-models-label">
               <div className="field-label">
-                <label>Model yang memakai part ini</label>
+                <span id="part-models-label">Model yang memakai part ini</span>
               </div>
               {models.length > 0 ? (
                 <div className="stack-sm">
@@ -663,9 +705,9 @@ export function PartsPage() {
                 <p className="muted small">Belum ada model untuk dipilih.</p>
               )}
               <span className="field-hint">Pilih minimal satu model.</span>
-            </div>}
+            </div>
 
-            <div className="form-actions" style={{ gridColumn: '1 / -1' }}>
+            <div className="form-actions span-2">
               <Button type="button" variant="secondary" onClick={closeForm} disabled={saving}>
                 Batal
               </Button>
@@ -681,10 +723,9 @@ export function PartsPage() {
           </form>
 
           <Callout tone="info" style={{ marginTop: 12 }}>
-            Press Part, Child Part, Bolt, dan Nut adalah komponen BOM. Assy dan Sub Assy saja yang memiliki line, proses, model, dan antrean produksi.
+            Press Part, Child Part, Bolt, dan Nut adalah komponen BOM. Isi Nama supplier dan pilih model agar part number mengikuti supplier. Assy dan Sub Assy saja yang memiliki proses dan antrean produksi.
           </Callout>
-        </section>
-      )}
+      </dialog>
 
       <section className="card">
         <div className="table-toolbar">
@@ -709,12 +750,12 @@ export function PartsPage() {
             <div className="select-wrap">
               <select
                 className="select"
-                style={{ width: 130, height: 38, minHeight: 38 }}
+                style={{ width: 150, height: 38, minHeight: 38 }}
                 value={lineFilter}
                 onChange={(event) => setLineFilter(event.target.value)}
                 aria-label="Filter line"
               >
-                <option value="all">Semua line</option>
+                <option value="all">Semua line / supplier</option>
                 {lineOptions.map((lineOption) => (
                   <option key={lineOption} value={lineOption}>
                     {lineOption}
@@ -725,7 +766,7 @@ export function PartsPage() {
             <div className="select-wrap">
               <select
                 className="select"
-                style={{ width: 130, height: 38, minHeight: 38 }}
+                style={{ width: 150, height: 38, minHeight: 38 }}
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value)}
                 aria-label="Filter status part"
@@ -747,7 +788,7 @@ export function PartsPage() {
           columns={columns}
           rows={rows}
           rowKey={(part) => part.partNumber}
-          minWidth={980}
+          minWidth={1040}
           footer={
             <span className="muted small">
               Menampilkan {rows.length} dari {parts.length} part produksi

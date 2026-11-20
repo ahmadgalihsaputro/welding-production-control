@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
+import { FormDialog } from '../../components/ui/FormDialog'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { useConfirmation } from '../../contexts/ConfirmationContext'
@@ -196,6 +197,7 @@ export function BomPage() {
   const planQty = Math.max(0, Number(assyPlanQty) || 0)
   const configuredParentCount = new Set(bomRows.map((row) => row.parentPartNumber)).size
   const selectedParent = assyParts.find((part) => part.partNumber === parentPartNumber)
+  const editingRow = editing ? components.find((row) => row.componentPartNumber === editing.componentPartNumber) : undefined
   const refreshBom = async () => setBomRows(await listBom())
 
   const selectParent = (partNumber: string) => {
@@ -349,23 +351,7 @@ export function BomPage() {
       key: 'quantity',
       header: 'Qty / 1 Assy',
       align: 'right',
-      render: (row) =>
-        editing?.componentPartNumber === row.componentPartNumber ? (
-          <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-            <input
-              className="input mono"
-              style={{ width: 84, height: 34, minHeight: 34 }}
-              type="number"
-              min="1"
-              step="1"
-              value={editing.value}
-              onChange={(event) => setEditing((current) => current ? { ...current, value: event.target.value } : current)}
-              aria-label={`Qty ${row.componentPartNumber}`}
-            />
-            <Button size="sm" variant="primary" loading={busyKey === row.componentPartNumber} onClick={() => void saveQuantity(row)}>Simpan</Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Batal</Button>
-          </div>
-        ) : <span className="mono strong">{formatNumber(row.quantityPerAssy)} pcs</span>,
+      render: (row) => <span className="mono strong">{formatNumber(row.quantityPerAssy)} pcs</span>,
     },
     {
       key: 'planned',
@@ -401,8 +387,8 @@ export function BomPage() {
         actions={<Button variant="secondary" leftIcon={<RefreshCw size={15} />} loading={loading} onClick={() => void loadData()}>Muat ulang</Button>}
       />
 
-      {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
-      {notice && <Callout tone="success">{notice}</Callout>}
+      {error && !selectedParent && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
+      {notice && !selectedParent && <Callout tone="success">{notice}</Callout>}
       {loading && parts.length === 0 && <Callout tone="info">Memuat daftar BOM…</Callout>}
 
       <section className="card">
@@ -422,21 +408,23 @@ export function BomPage() {
         />
       </section>
 
-      {selectedParent ? (
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">Komposisi {selectedParent.partNumber}</h2>
-              <p className="section-sub">{selectedParent.line} · {selectedParent.models.join(', ') || 'Model belum diatur'}</p>
-            </div>
-            <Badge tone={components.length ? 'success' : 'warning'}>{components.length} komponen</Badge>
-          </div>
-
+      {selectedParent && (
+        <FormDialog
+          open
+          onClose={() => selectParent('')}
+          titleId="bom-composition-title"
+          title={`Komposisi ${selectedParent.partNumber}`}
+          subtitle={`${selectedParent.line} · ${selectedParent.models.join(', ') || 'Model belum diatur'}`}
+          badge={<Badge tone={components.length ? 'success' : 'warning'}>{components.length} komponen</Badge>}
+          className="form-dialog--wide"
+        >
+          {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
+          {notice && <Callout tone="success">{notice}</Callout>}
           {selectedParent.status === 'inactive' && <Callout tone="warning">Part Assy ini sedang nonaktif.</Callout>}
 
           <div className="form-grid">
             <Field label="Qty Assy yang direncanakan" htmlFor="assy-plan-qty" hint="Dipakai untuk menghitung total kebutuhan komponen.">
-              <input id="assy-plan-qty" className="input" type="number" min="0" step="1" value={assyPlanQty} onChange={(event) => setAssyPlanQty(event.target.value)} />
+              <input id="assy-plan-qty" className="input" type="number" min="0" step="1" value={assyPlanQty} onChange={(event) => setAssyPlanQty(event.target.value)} autoFocus />
             </Field>
           </div>
 
@@ -517,14 +505,44 @@ export function BomPage() {
               <p>Hanya komponen yang benar-benar digunakan perlu ditambahkan ke BOM.</p>
             </div>
           )}
-        </section>
-      ) : (
+        </FormDialog>
+      )}
+
+      {!selectedParent && (
         <div className="empty-state">
           <div className="empty-state__icon"><Boxes size={22} /></div>
           <strong>Pilih part Assy</strong>
-          <p>Komposisi BOM akan tampil setelah Anda memilih part Assy di daftar.</p>
+          <p>Klik "Lihat komposisi" pada tabel untuk membuka popup komposisi dan menambah komponen.</p>
         </div>
       )}
+
+      <FormDialog
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        titleId="bom-qty-form-title"
+        title={`Ubah qty · ${editing?.componentPartNumber ?? ''}`}
+        subtitle={editingRow ? `Qty saat ini ${formatNumber(editingRow.quantityPerAssy)} pcs per 1 Assy ${editingRow.parentPartNumber}.` : undefined}
+        badge={selectedParent ? <Badge tone="neutral">{selectedParent.partNumber}</Badge> : undefined}
+      >
+        {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
+        <Field label="Qty per 1 Assy" htmlFor="bom-edit-qty" hint="Bilangan bulat minimal 1.">
+          <input
+            id="bom-edit-qty"
+            className="input mono"
+            type="number"
+            min="1"
+            step="1"
+            value={editing?.value ?? ''}
+            onChange={(event) => setEditing((current) => current ? { ...current, value: event.target.value } : current)}
+            aria-label={`Qty ${editing?.componentPartNumber ?? ''}`}
+            autoFocus
+          />
+        </Field>
+        <div className="form-actions">
+          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Batal</Button>
+          <Button size="sm" variant="primary" loading={busyKey === editing?.componentPartNumber} onClick={() => editingRow && void saveQuantity(editingRow)}>Simpan</Button>
+        </div>
+      </FormDialog>
     </div>
   )
 }

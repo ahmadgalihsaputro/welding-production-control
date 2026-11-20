@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button'
 import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
+import { FormDialog } from '../../components/ui/FormDialog'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { StatCard } from '../../components/ui/StatCard'
@@ -328,20 +329,20 @@ export function ModelsPage() {
         />
       </div>
 
-      {showForm && (
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">
-                {form.id ? t('Ubah model', 'Edit model') : t('Model baru', 'New model')}
-              </h2>
-              <p className="section-sub">
-                {t('Kode model tidak dapat diubah setelah dibuat karena dipakai part, routing, dan jadwal.', 'The model code cannot be changed after creation because it is used by parts, routings, and schedules.')}
-              </p>
-            </div>
-            <Badge tone="success">{t('Terhubung database', 'Connected to database')}</Badge>
-          </div>
-          <div className="form-grid master-model-form">
+      <FormDialog
+        open={showForm}
+        onClose={closeForm}
+        titleId="model-form-title"
+        title={form.id ? t('Ubah model', 'Edit model') : t('Model baru', 'New model')}
+        subtitle={t('Kode model tidak dapat diubah setelah dibuat karena dipakai part, routing, dan jadwal.', 'The model code cannot be changed after creation because it is used by parts, routings, and schedules.')}
+        badge={<Badge tone="success">{t('Terhubung database', 'Connected to database')}</Badge>}
+      >
+        {error && (
+          <Callout tone="danger" title={t('Aksi gagal', 'Action failed')}>
+            {error}
+          </Callout>
+        )}
+        <div className="form-grid master-model-form">
             <Field
               label={t('Kode model', 'Model code')}
               htmlFor="model-code"
@@ -362,6 +363,7 @@ export function ModelsPage() {
               <input
                 id="model-name"
                 className="input"
+                autoFocus
                 value={form.name}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, name: event.target.value }))
@@ -402,8 +404,7 @@ export function ModelsPage() {
               {form.id ? t('Simpan perubahan', 'Save changes') : t('Simpan model', 'Save model')}
             </Button>
           </div>
-        </section>
-      )}
+      </FormDialog>
 
       <section className="card">
         <div className="table-toolbar">

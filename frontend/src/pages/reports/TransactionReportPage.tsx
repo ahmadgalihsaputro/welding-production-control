@@ -2,6 +2,7 @@ import { ArrowDownUp, CircleCheck, Clock3, Download, ListFilter, ReceiptText, XC
 import { useState } from 'react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
+import { Callout } from '../../components/ui/Callout'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Field } from '../../components/ui/Field'
 import { PageHeader } from '../../components/ui/PageHeader'
@@ -87,11 +88,13 @@ export function TransactionReportPage() {
           </>
         }
         actions={
-          <Button variant="secondary" leftIcon={<Download size={15} />}>
+          <Button variant="secondary" leftIcon={<Download size={15} />} disabled title="Data contoh belum bisa diekspor">
             Export ledger
           </Button>
         }
       />
+
+      <Callout tone="warning">Data contoh untuk simulasi; mutasi stok nyata ada di Inventory Control → Mutasi Stok. Ekspor dinonaktifkan.</Callout>
 
       <div className="kpi-grid">
         <StatCard label="Total transaksi" value={String(transactionRows.length)} suffix="trx" icon={ReceiptText} tone="orange" note="Hari ini" />

@@ -7,7 +7,7 @@ import {
   Timer,
   Warehouse,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -16,39 +16,97 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { StatCard } from '../../components/ui/StatCard'
 import { StatusBadge } from '../../components/ui/StatusBadge'
 import { useAuth } from '../../contexts/AuthContext'
+import { useConfirmation } from '../../contexts/ConfirmationContext'
 import { usePreferences } from '../../contexts/PreferencesContext'
-import { bufferItems as initialBuffer } from '../../data/mock'
-import { getProductionPart } from '../../data/productionLines'
+import { describeApiError } from '../../lib/api'
+import { listBuffer, listLedger, updateBufferStatus, type BufferItemRecord } from '../../lib/inventoryApi'
+import { listParts } from '../../lib/masterApi'
 import { formatNumber } from '../../lib/utils'
 
 export function ProductionBufferPage() {
   const navigate = useNavigate()
   const { activeLine } = useAuth()
-  const { t } = usePreferences()
-  const [items, setItems] = useState(initialBuffer)
+  const { confirm } = useConfirmation()
+  const { t, formatTime } = usePreferences()
+  const [items, setItems] = useState<BufferItemRecord[]>([])
+  const [storeInToday, setStoreInToday] = useState(0)
+  const [lineByPart, setLineByPart] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [loadedAt, setLoadedAt] = useState(() => formatTime(new Date().toISOString()))
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [nextItems, parts, ledger] = await Promise.all([
+        listBuffer(),
+        listParts(),
+        listLedger({ type: 'Store In' }),
+      ])
+      setItems(nextItems.filter((item) => item.status === 'pending'))
+      setLineByPart(Object.fromEntries(parts.map((part) => [part.partNumber, part.line])))
+      const startOfDay = new Date()
+      startOfDay.setHours(0, 0, 0, 0)
+      setStoreInToday(ledger.filter((entry) => new Date(entry.time) >= startOfDay).length)
+      setLoadedAt(formatTime(new Date().toISOString()))
+    } catch (loadError) {
+      setError(describeApiError(loadError, 'Production Buffer gagal dimuat.'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
   const lineItems = items.filter((item) => {
-    const line = getProductionPart(item.partNumber)?.line ?? 'Robot G'
+    const line = lineByPart[item.partNumber] ?? '—'
     return activeLine === 'all' || line === activeLine
   })
 
   const totalPcs = lineItems.reduce((sum, item) => sum + item.qty, 0)
   const oldest = Math.max(...lineItems.map((item) => item.waitingMinutes), 0)
 
-  const storeIn = (id: string) => {
+  const storeIn = async (id: string) => {
     const item = items.find((entry) => entry.id === id)
     if (!item) return
-    setItems((current) => current.filter((entry) => entry.id !== id))
-    setMessage(
-      `${item.qty} pcs ${item.partNumber} ${t('berhasil di-Store In dari Production Buffer ke Assy Store.', 'successfully Stored In from Production Buffer to Assy Store.')}`,
-    )
+    if (!(await confirm({
+      title: 'Store In item buffer?',
+      message: `${formatNumber(item.qty)} pcs ${item.partNumber} akan dipindahkan dari Production Buffer ke Store.`,
+      confirmLabel: 'Store In',
+    }))) return
+    setError('')
+    setMessage('')
+    try {
+      await updateBufferStatus(id, 'stored')
+      setMessage(`${item.qty} pcs ${item.partNumber} berhasil di-Store In ke Store.`)
+      await loadData()
+    } catch (storeError) {
+      setError(describeApiError(storeError, 'Store In gagal.'))
+    }
   }
 
-  const storeAll = () => {
+  const storeAll = async () => {
     if (lineItems.length === 0) return
-    setMessage(`${lineItems.length} box ${t('berhasil di-Store In ke Assy Store.', 'successfully Stored In to Assy Store.')}`)
-    const lineItemIds = new Set(lineItems.map((item) => item.id))
-    setItems((current) => current.filter((item) => !lineItemIds.has(item.id)))
+    if (!(await confirm({
+      title: 'Store In semua buffer?',
+      message: `${lineItems.length} box dari Production Buffer akan dipindahkan ke Store.`,
+      confirmLabel: 'Store In semua',
+    }))) return
+    setError('')
+    setMessage('')
+    try {
+      for (const item of lineItems) {
+        await updateBufferStatus(item.id, 'stored')
+      }
+      setMessage(`${lineItems.length} box berhasil di-Store In ke Store.`)
+      await loadData()
+    } catch (storeError) {
+      setError(describeApiError(storeError, 'Store In semua gagal.'))
+    }
   }
 
   return (
@@ -66,7 +124,7 @@ export function ProductionBufferPage() {
               <Warehouse size={12} /> {activeLine === 'all' ? t('Semua line', 'All lines') : activeLine} — Production Buffer
             </span>
             <span className="page-meta__item">
-              <Clock3 size={12} /> {t('Update 09:41', 'Updated 09:41')}
+              <Clock3 size={12} /> {t(`Dimuat pukul ${loadedAt}`, `Loaded at ${loadedAt}`)}
             </span>
           </>
         }
@@ -75,13 +133,14 @@ export function ProductionBufferPage() {
             <Button variant="secondary" onClick={() => navigate('/inventory/ledger')}>
               {t('Mutasi stok', 'Stock Movements')}
             </Button>
-            <Button variant="primary" leftIcon={<Store size={15} />} onClick={storeAll}>
+            <Button variant="primary" leftIcon={<Store size={15} />} onClick={() => void storeAll()}>
               {t('Store In semua', 'Store In All')}
             </Button>
           </>
         }
       />
 
+      {error && <Callout tone="danger" title="Aksi gagal">{error}</Callout>}
       {message && <Callout tone="success">{message}</Callout>}
 
       <div className="kpi-grid">
@@ -111,8 +170,8 @@ export function ProductionBufferPage() {
         />
         <StatCard
           label={t('Store In hari ini', 'Store In today')}
-          value="6"
-          suffix="box"
+          value={String(storeInToday)}
+          suffix="transaksi"
           icon={Store}
           tone="green"
           note={t('Selesai dipindahkan', 'Completed transfers')}
@@ -138,7 +197,7 @@ export function ProductionBufferPage() {
                 </div>
                 <div>
                   <span>{t('Selesai', 'Completed')}</span>
-                  <strong>{item.completedAt}</strong>
+                  <strong>{new Date(item.completedAt).toLocaleString('id-ID')}</strong>
                 </div>
                 <div>
                   <span>{t('Menunggu', 'Waiting')}</span>
@@ -158,7 +217,7 @@ export function ProductionBufferPage() {
                 size="sm"
                 block
                 leftIcon={<Store size={13} />}
-                onClick={() => storeIn(item.id)}
+                onClick={() => void storeIn(item.id)}
               >
                 Store In
               </Button>
@@ -180,36 +239,7 @@ export function ProductionBufferPage() {
         </section>
       )}
 
-      <div className="grid grid-2">
-        <section className="card">
-          <div className="section-head">
-            <div>
-              <h2 className="section-title">{t('Alur Buffer → Store', 'Buffer → Store Flow')}</h2>
-              <p className="section-sub">{t('Kontrol perpindahan barang', 'Item movement control')}</p>
-            </div>
-          </div>
-          <div className="timeline">
-            {[
-              { time: '08:30', title: t('Box dikonfirmasi', 'Box confirmed'), detail: t('39 pcs 5220BA42 masuk Production Buffer', '39 pcs 5220BA42 entered Production Buffer') },
-              { time: '08:45', title: t('Store In diterima', 'Store In received'), detail: t('35 pcs 5220K814 masuk Sub Assy Store', '35 pcs 5220K814 entered Sub Assy Store') },
-              { time: '09:10', title: t('Buffer aging 52 menit', 'Buffer aging 52 minutes'), detail: t('5220BA42 menunggu dipindahkan', '5220BA42 waiting to be moved') },
-              { time: '09:41', title: t('Stock update', 'Stock update'), detail: t('Assy Store menerima box terbaru', 'Assy Store received the latest box') },
-            ].map((item) => (
-              <div className="timeline-item" key={item.time}>
-                <span className="timeline-dot timeline-dot--sky" />
-                <div>
-                  <div className="timeline-head">
-                    <span className="timeline-title">{item.title}</span>
-                    <span className="timeline-time">{item.time}</span>
-                  </div>
-                  <span className="timeline-text">{item.detail}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <div className="stack">
+      <div className="stack">
           <Callout tone="warning" title={t('Aging buffer', 'Buffer aging')}>
             {t(
               'Box dengan waktu tunggu di atas 60 menit ditandai kuning. Pastikan area buffer tidak penuh dan hasil produksi segera di-Store In.',
@@ -243,7 +273,6 @@ export function ProductionBufferPage() {
               {t('Buka Assy Store', 'Open Assy Store')}
             </Button>
           </section>
-        </div>
       </div>
     </div>
   )

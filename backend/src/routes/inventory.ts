@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { authenticate, type AuthenticatedRequest, requireRole } from '../middleware/auth.js'
 import { applyStockMovement, stockStatus } from '../lib/stock.js'
+import { jakartaDateKey } from '../lib/userShift.js'
 
 const router = Router()
 
@@ -33,7 +34,7 @@ router.get('/overview', async (_req, res, next) => {
       prisma.stockItem.findMany(),
       prisma.bufferItem.count({ where: { status: 'pending' } }),
       prisma.ledgerEntry.count({
-        where: { time: { gte: new Date(new Date().toISOString().slice(0, 10)) } },
+        where: { time: { gte: new Date(`${jakartaDateKey(new Date())}T00:00:00+07:00`) } },
       }),
     ])
 
@@ -126,15 +127,16 @@ router.post(
     try {
       const body = adjustmentSchema.parse(req.body)
       const partNumber = body.partNumber.trim().toUpperCase()
-      const stock = await prisma.stockItem.findUnique({ where: { partNumber } })
-      if (!stock) return res.status(404).json({ message: 'Stock item not found.' })
-
-      const delta = body.newStore !== undefined ? body.newStore - stock.store : body.qty!
-      if (delta === 0) {
-        return res.status(400).json({ message: 'Tidak ada perubahan stok.' })
-      }
 
       const result = await prisma.$transaction(async (tx) => {
+        // Kunci baris dulu agar newStore dihitung dari stok yang tidak berubah saat transaksi lain masuk.
+        const locked = await tx.$queryRaw<Array<{ store: number }>>`
+          SELECT "store" FROM "StockItem" WHERE "partNumber" = ${partNumber} FOR UPDATE
+        `
+        if (!locked.length) return null
+        const delta = body.newStore !== undefined ? body.newStore - locked[0].store : body.qty!
+        if (delta === 0) return null
+
         const movement = await applyStockMovement(tx, {
           partNumber,
           delta,
@@ -153,6 +155,9 @@ router.post(
         return movement
       })
 
+      if (!result) {
+        return res.status(400).json({ message: 'Stock item tidak ditemukan atau tidak ada perubahan stok.' })
+      }
       res.json(result)
     } catch (error) {
       next(error)
@@ -176,7 +181,7 @@ const bufferSchema = z.object({
   operator: z.string().min(1).optional(),
 })
 
-router.post('/buffer', async (req: AuthenticatedRequest, res, next) => {
+router.post('/buffer', requireRole('admin', 'leader'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = bufferSchema.parse(req.body)
     const partNumber = body.partNumber.trim().toUpperCase()
@@ -203,7 +208,10 @@ const bufferStatusSchema = z.object({
   status: z.enum(['pending', 'stored']),
 })
 
-router.patch('/buffer/:id/status', async (req: AuthenticatedRequest, res, next) => {
+router.patch(
+  '/buffer/:id/status',
+  requireRole('admin', 'leader'),
+  async (req: AuthenticatedRequest, res, next) => {
   try {
     const body = bufferStatusSchema.parse(req.body)
     const item = await prisma.bufferItem.findUnique({
@@ -216,6 +224,13 @@ router.patch('/buffer/:id/status', async (req: AuthenticatedRequest, res, next) 
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // Klaim status dulu supaya dua permintaan "stored" tidak menambah stok dua kali.
+      const claimed = await tx.bufferItem.updateMany({
+        where: { id: item.id, status: 'pending' },
+        data: { status: 'stored' },
+      })
+      if (claimed.count === 0) return null
+
       if (body.status === 'stored') {
         await applyStockMovement(tx, {
           partNumber: item.partNumber,
@@ -244,11 +259,15 @@ router.patch('/buffer/:id/status', async (req: AuthenticatedRequest, res, next) 
       })
     })
 
+    if (!updated) {
+      return res.status(409).json({ message: 'Buffer ini sudah diproses. Muat ulang halaman sebelum mencoba lagi.' })
+    }
     res.json(updated)
-  } catch (error) {
-    next(error)
-  }
-})
+    } catch (error) {
+      next(error)
+    }
+  },
+)
 
 router.get('/status/:partNumber', async (req, res, next) => {
   try {
