@@ -529,17 +529,19 @@ export function KanbanConfigPage() {
         </div>
         <div className="kanban-config-preview__saved">
           <div className="kanban-config-preview__label">
-            <div className="kanban-config-preview__heading"><strong>WPC · KANBAN</strong><Badge tone={previewConfig.kanbanType === 'KD' ? 'orange' : 'neutral'}>{previewConfig.kanbanType}</Badge></div>
-            <h4>{previewConfig.partNumber}</h4>
-            <div className="kanban-config-preview__details">
-              <span><small>Line produksi</small><strong>{previewConfig.line}</strong></span>
-              <span><small>Line proses</small><strong>{previewConfig.process}</strong></span>
-              <span><small>Jenis</small><strong>{previewConfig.partType.replace('_', ' ')}</strong></span>
-              <span><small>Qty</small><strong>{previewConfig.quantity} pcs</strong></span>
-              <span><small>Model</small><strong>{previewConfig.model}</strong></span>
-              <span><small>Lokasi</small><strong>{previewConfig.storeLocation}</strong></span>
-              <span><small>Next Process</small><strong>{previewConfig.nextProcess}</strong></span>
-              <span><small>Printer</small><strong>{previewConfig.printer?.name ?? 'Printer default'}</strong></span>
+            <div className="kanban-config-preview__label-main">
+              <div className="kanban-config-preview__heading"><strong>WPC · KANBAN</strong><Badge tone={previewConfig.kanbanType === 'KD' ? 'orange' : 'neutral'}>{previewConfig.kanbanType}</Badge></div>
+              <h4>{previewConfig.partNumber}</h4>
+              <div className="kanban-config-preview__details">
+                <span><small>Line produksi</small><strong>{previewConfig.line}</strong></span>
+                <span><small>Line proses</small><strong>{previewConfig.process}</strong></span>
+                <span><small>Jenis</small><strong>{previewConfig.partType.replace('_', ' ')}</strong></span>
+                <span><small>Qty</small><strong>{previewConfig.quantity} pcs</strong></span>
+                <span><small>Model</small><strong>{previewConfig.model}</strong></span>
+                <span><small>Lokasi</small><strong>{previewConfig.storeLocation}</strong></span>
+                <span><small>Next Process</small><strong>{previewConfig.nextProcess}</strong></span>
+                <span><small>Printer</small><strong>{previewConfig.printer?.name ?? 'Printer default'}</strong></span>
+              </div>
             </div>
             <div className="kanban-config-preview__qr">
               <QRCodeSVG value={previewPayload} size={160} level="M" />

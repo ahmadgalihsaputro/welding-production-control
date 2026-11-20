@@ -273,34 +273,6 @@
   color: #fdba74;
 }
 
-.sidebar-status {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0 4px 8px;
-  padding: 9px 10px;
-  border-radius: 12px;
-  background: var(--inset-bg);
-  border: 1px solid var(--glass-line);
-}
-
-.sidebar-status strong {
-  display: block;
-  font-size: 9.5px;
-  font-weight: 600;
-  color: var(--text-soft);
-}
-
-.sidebar-status span:not(.line-dot) {
-  display: block;
-  font-size: 8.5px;
-  color: var(--muted);
-}
-
-.app-shell.is-collapsed .sidebar-status {
-  display: none;
-}
-
 .sidebar-footer {
   margin-top: 8px;
   padding-top: 9px;
@@ -575,29 +547,6 @@
 
 .connection-indicator.is-checking .indicator-dot {
   background: var(--muted);
-}
-
-.connection-indicator--labeled {
-  width: auto;
-  height: auto;
-  display: flex;
-  justify-content: flex-start;
-  border: 0;
-  background: none;
-  padding: 0;
-}
-
-.connection-indicator__copy strong {
-  display: block;
-  font-size: 9.5px;
-  font-weight: 600;
-  color: var(--text-soft);
-}
-
-.connection-indicator__copy > span {
-  display: block;
-  font-size: 8.5px;
-  color: var(--muted);
 }
 
 .topbar__search .input-wrap__icon {

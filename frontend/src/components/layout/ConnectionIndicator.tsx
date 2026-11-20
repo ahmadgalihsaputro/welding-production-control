@@ -2,13 +2,8 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { usePreferences } from '../../contexts/PreferencesContext'
 
-interface ConnectionIndicatorProps {
-  className?: string
-  showLabel?: boolean
-}
-
-/** Status koneksi backend nyata; tampil untuk semua peran yang sudah login. */
-export function ConnectionIndicator({ className, showLabel = false }: ConnectionIndicatorProps = {}) {
+/** Status koneksi backend nyata; tampil sekali di topbar untuk semua peran yang login. */
+export function ConnectionIndicator() {
   const { user } = useAuth()
   const { t } = usePreferences()
   const [isConnected, setIsConnected] = useState(false)
@@ -49,24 +44,11 @@ export function ConnectionIndicator({ className, showLabel = false }: Connection
     : isConnected
       ? t('Backend Terhubung', 'Backend connected')
       : t('Backend Tidak Tersedia', 'Backend unavailable')
-  const classes = [
-    'connection-indicator',
-    className,
-    showLabel && 'connection-indicator--labeled',
-    isChecking ? 'is-checking' : isConnected ? 'is-online' : 'is-offline',
-  ]
-    .filter(Boolean)
-    .join(' ')
+  const status = isChecking ? 'is-checking' : isConnected ? 'is-online' : 'is-offline'
 
   return (
-    <div className={classes} role="status" aria-live="polite" aria-label={label} title={label}>
+    <div className={`connection-indicator ${status}`} role="status" aria-live="polite" aria-label={label} title={label}>
       <span className="indicator-dot" aria-hidden="true" />
-      {showLabel && (
-        <span className="connection-indicator__copy">
-          <strong>{t('Sistem', 'System')}</strong>
-          <span>{label}</span>
-        </span>
-      )}
     </div>
   )
 }

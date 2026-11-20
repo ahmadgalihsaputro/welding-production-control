@@ -12,7 +12,6 @@ import {
 } from '../../data/navigation'
 import { Avatar } from '../ui/Avatar'
 import { BrandLockup } from '../brand/Logo'
-import { ConnectionIndicator } from './ConnectionIndicator'
 
 interface SidebarProps {
   collapsed: boolean
@@ -155,10 +154,6 @@ export function Sidebar({ collapsed, isMobile, onExpand }: SidebarProps) {
           )
         })}
       </nav>
-
-      <div className="sidebar-status">
-        <ConnectionIndicator showLabel />
-      </div>
 
       <div className="sidebar-footer">
         <NavLink to="/settings/profile" className="sidebar-user">

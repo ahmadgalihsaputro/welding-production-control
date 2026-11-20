@@ -405,7 +405,7 @@ export function Topbar({ onMenuClick, isMobile }: TopbarProps) {
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
         </button>
 
-        {user?.role === 'admin' && <ConnectionIndicator />}
+        {user && <ConnectionIndicator />}
 
         <div className="popover-anchor" ref={notifRef}>
           <button
